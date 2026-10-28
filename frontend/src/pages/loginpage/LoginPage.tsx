@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { DEMO_ACCOUNTS } from '../../utils/formatters';
 import {
   Lock,
-  Mail,
+  User,
   ArrowRight,
   ShieldCheck,
   Zap,
@@ -138,11 +138,14 @@ export const LoginPage: React.FC = () => {
 
           <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="form-label">
-                Email công vụ <span className="required">*</span>
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label">
+                  Tài khoản đăng nhập <span className="required">*</span>
+                </label>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Tối đa 50 ký tự</span>
+              </div>
               <div style={{ position: 'relative' }}>
-                <Mail
+                <User
                   size={16}
                   style={{
                     position: 'absolute',
@@ -153,13 +156,15 @@ export const LoginPage: React.FC = () => {
                   }}
                 />
                 <input
-                  type="email"
+                  type="text"
                   required
+                  maxLength={50}
                   className="form-input"
                   style={{ paddingLeft: '38px' }}
-                  placeholder="name@demo.com"
+                  placeholder="Tên đăng nhập hoặc email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -182,11 +187,13 @@ export const LoginPage: React.FC = () => {
                 <input
                   type="password"
                   required
+                  maxLength={50}
                   className="form-input"
                   style={{ paddingLeft: '38px' }}
                   placeholder="••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                 />
               </div>
             </div>

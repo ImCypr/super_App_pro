@@ -247,9 +247,9 @@ export const getPaymentStatusInfo = (status: string): StatusMeta => {
     case 'pending_chairman':
       return { label: 'Chờ Chủ tịch xác nhận giải ngân', badgeClass: 'badge-purple', dotColor: '#a855f7' };
     case 'pending_disbursement':
-      return { label: 'Chờ Kế toán duyệt chi', badgeClass: 'badge-info', dotColor: '#06b6d4' };
+      return { label: 'Chờ Kế toán giải ngân', badgeClass: 'badge-info', dotColor: '#06b6d4' };
     case 'completed':
-      return { label: 'Đã duyệt chi & hoàn thành', badgeClass: 'badge-success', dotColor: '#10b981' };
+      return { label: 'Đã giải ngân', badgeClass: 'badge-success', dotColor: '#10b981' };
     case 'rejected':
       return { label: 'Bị từ chối', badgeClass: 'badge-danger', dotColor: '#ef4444' };
     default:

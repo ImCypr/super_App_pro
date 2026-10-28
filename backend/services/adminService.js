@@ -133,7 +133,11 @@ class AdminService {
     }
 
     if (!email || !email.trim()) {
-      throw new Error('Email là bắt buộc');
+      throw new Error('Tài khoản đăng nhập là bắt buộc');
+    }
+
+    if (email.trim().length > 50) {
+      throw new Error('Tài khoản đăng nhập không được vượt quá 50 ký tự');
     }
 
     if (!password || password.length < 6) {
@@ -145,10 +149,10 @@ class AdminService {
       throw new Error(`Chức danh không hợp lệ. Phải là một trong: ${VALID_ROLES.join(', ')}`);
     }
 
-    // Kiểm tra trùng email
+    // Kiểm tra trùng email / tài khoản
     const existing = await User.findOne({ email: email.toLowerCase().trim() });
     if (existing) {
-      throw new Error('Email này đã được sử dụng trong hệ thống');
+      throw new Error('Tài khoản này đã tồn tại trong hệ thống');
     }
 
     // Kiểm tra trưởng phòng trực tiếp nếu có gán

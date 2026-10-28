@@ -124,7 +124,7 @@ export const UserManagementPage: React.FC = () => {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.fullName.trim() || !createForm.email.trim()) {
-      showToast('error', 'Vui lòng điền đầy đủ Họ tên và Email');
+      showToast('error', 'Vui lòng điền đầy đủ Họ tên và Tài khoản đăng nhập');
       return;
     }
 
@@ -428,8 +428,8 @@ export const UserManagementPage: React.FC = () => {
             <Search size={16} style={{ position: 'absolute', left: 12, top: 12, color: 'var(--text-muted)' }} />
             <input
               type="text"
-              className="form-control"
-              placeholder="Tìm theo họ tên hoặc email..."
+              className="form-input"
+              placeholder="Tìm theo họ tên hoặc tài khoản..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingLeft: '2.4rem' }}
@@ -769,7 +769,8 @@ export const UserManagementPage: React.FC = () => {
                 <label className="form-label" style={{ fontWeight: 600 }}>Họ và Tên *</label>
                 <input
                   type="text"
-                  className="form-control"
+                  className="form-input"
+                  maxLength={100}
                   placeholder="Ví dụ: Nguyễn Văn An"
                   value={createForm.fullName}
                   onChange={(e) => setCreateForm({ ...createForm, fullName: e.target.value })}
@@ -779,11 +780,15 @@ export const UserManagementPage: React.FC = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div>
-                  <label className="form-label" style={{ fontWeight: 600 }}>Email Đăng Nhập *</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label className="form-label" style={{ fontWeight: 600 }}>Tài Khoản Đăng Nhập *</label>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Tối đa 50 ký tự</span>
+                  </div>
                   <input
-                    type="email"
-                    className="form-control"
-                    placeholder="tenuser@congty.com"
+                    type="text"
+                    className="form-input"
+                    maxLength={50}
+                    placeholder="Ví dụ: ketoan, admin02 hoặc email"
                     value={createForm.email}
                     onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
                     required
@@ -793,7 +798,8 @@ export const UserManagementPage: React.FC = () => {
                   <label className="form-label" style={{ fontWeight: 600 }}>Mật Khẩu Khởi Tạo *</label>
                   <input
                     type="text"
-                    className="form-control"
+                    className="form-input"
+                    maxLength={50}
                     placeholder="Mặc định: 123456"
                     value={createForm.password}
                     onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}

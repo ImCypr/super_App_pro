@@ -215,7 +215,7 @@ export const Sidebar: React.FC = () => {
           </span>
         </div>
         <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-          {user?.role === 'admin' && 'Admin: Quản trị người dùng, gán/sửa/xóa chức danh, thiết lập Trưởng phòng trực tiếp.'}
+          {user?.role === 'admin' && 'Admin: Quản lý người dùng, chức danh và phòng ban.'}
           {user?.role === 'nhan_vien' && 'Nhân viên: Tạo yêu cầu mua sắm & đề xuất tạm ứng, nộp hoàn tạm ứng.'}
           {user?.role === 'truong_phong' && 'Trưởng phòng: Duyệt yêu cầu mua sắm của nhân viên trực tiếp quản lý (≤ 1.000.000đ).'}
           {user?.role === 'thu_mua' && 'Thu mua: Khảo giá 3-4 nhà cung cấp, giải trình mức giá và thực hiện mua hàng.'}

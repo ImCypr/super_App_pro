@@ -564,7 +564,7 @@ export const CreatePaymentPage: React.FC = () => {
         <div>
           <h1 style={{ fontSize: '1.5rem', color: '#ffffff' }}>Lập Đề Xuất Thanh Toán Mới</h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Kế toán tiếp nhận hóa đơn / hợp đồng từ Thu mua để lập đề xuất thanh toán trình Lãnh đạo (Giám đốc/Chủ tịch) xác nhận giải ngân, sau đó duyệt chi.
+            Lập đề xuất thanh toán trình Lãnh đạo duyệt, sau đó Kế toán giải ngân.
           </p>
         </div>
       </div>
@@ -1587,18 +1587,17 @@ export const CreatePaymentPage: React.FC = () => {
           <div className="card" style={{ padding: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
               <Info size={18} color="var(--primary)" />
-              <h4 style={{ fontSize: '0.95rem', color: '#ffffff' }}>Luồng Phê Duyệt Chi</h4>
+              <h4 style={{ fontSize: '0.95rem', color: '#ffffff' }}>Luồng Duyệt</h4>
             </div>
             <div style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-              Sau khi gửi, đề xuất thanh toán sẽ được chuyển:
-              <div style={{ marginTop: '0.65rem', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <CheckCircle2 size={13} color="var(--warning)" />
-                  <span>Giám đốc / Chủ tịch <strong>xác nhận giải ngân</strong> (tùy theo mức tiền)</span>
+                  <span>Giám đốc / Chủ tịch <strong>xác nhận</strong></span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <CheckCircle2 size={13} color="var(--accent-cyan)" />
-                  <span>Kế toán <strong>duyệt chi</strong> và chuyển tiền</span>
+                  <span>Kế toán <strong>giải ngân</strong></span>
                 </div>
               </div>
             </div>

@@ -3,7 +3,13 @@ const Department = require('../models/Department');
 class DepartmentService {
   async create(data) {
     const existing = await Department.findOne({ name: data.name });
-    if (existing) throw new Error('Phòng ban đã tồn tại');
+    if (existing) {
+      if (existing.isActive) throw new Error('Phòng ban đã tồn tại');
+      // Phòng ban đã bị xóa mềm trước đó -> kích hoạt lại với thông tin mới
+      existing.isActive = true;
+      if (data.description !== undefined) existing.description = data.description;
+      return await existing.save();
+    }
     return await Department.create(data);
   }
 
@@ -18,6 +24,10 @@ class DepartmentService {
   }
 
   async update(id, data) {
+    if (data.name) {
+      const duplicate = await Department.findOne({ name: data.name, _id: { $ne: id } });
+      if (duplicate) throw new Error('Tên phòng ban đã tồn tại');
+    }
     const dept = await Department.findByIdAndUpdate(id, data, { new: true, runValidators: true });
     if (!dept) throw new Error('Phòng ban không tồn tại');
     return dept;

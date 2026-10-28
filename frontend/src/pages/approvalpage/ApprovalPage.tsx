@@ -334,7 +334,7 @@ export const ApprovalPage: React.FC = () => {
                           <td style={{ textAlign: 'right' }}>
                             <Link to={`/payment/${pay._id}`} className="btn btn-warning btn-sm">
                               <Eye size={14} />
-                              <span>{pay.status === 'pending_disbursement' ? 'Duyệt chi' : 'Xác nhận giải ngân'}</span>
+                              <span>{pay.status === 'pending_disbursement' ? 'Giải ngân' : 'Xác nhận giải ngân'}</span>
                             </Link>
                           </td>
                         </tr>

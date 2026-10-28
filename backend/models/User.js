@@ -9,10 +9,11 @@ const userSchema = new mongoose.Schema({
   },
   email: {
     type: String,
-    required: [true, 'Email là bắt buộc'],
+    required: [true, 'Tài khoản đăng nhập là bắt buộc'],
     unique: true,
     lowercase: true,
     trim: true,
+    maxlength: [50, 'Tài khoản đăng nhập không được vượt quá 50 ký tự'],
   },
   password: {
     type: String,
