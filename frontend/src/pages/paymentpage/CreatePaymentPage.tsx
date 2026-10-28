@@ -39,14 +39,14 @@ export const CreatePaymentPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedPurchaseId = searchParams.get('purchaseProposalId');
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   // Chỉ duy nhất vai trò Kế toán mới có nghiệp vụ lập đề xuất thanh toán
   useEffect(() => {
-    if (user && user.role !== 'ke_toan') {
+    if (user && !hasRole('ke_toan')) {
       navigate('/dashboard', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, hasRole]);
 
   const [purchaseProposals, setPurchaseProposals] = useState<PurchaseProposal[]>([]);
   const [loadingProposals, setLoadingProposals] = useState(true);
@@ -550,7 +550,7 @@ export const CreatePaymentPage: React.FC = () => {
   // Số tiền còn lại thực tế cần chi trả sau khi đối trừ số tiền Thu mua đã tạm ứng trước:
   const remainingAfterAdvance = Math.max(0, remainingAmount - (isSelectedAdvanced ? advanceAmount : 0));
 
-  if (!user || user.role !== 'ke_toan') {
+  if (!user || !hasRole('ke_toan')) {
     return null;
   }
 

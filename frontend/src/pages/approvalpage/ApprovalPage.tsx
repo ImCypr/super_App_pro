@@ -32,9 +32,22 @@ export const ApprovalPage: React.FC = () => {
         paymentProposalService.getAll(),
       ]);
 
+      const userRoles: string[] = (user?.roles && user.roles.length > 0) ? user.roles : (user?.role ? [user.role] : []);
+      const hasRole = (...target: string[]) => target.some(r => userRoles.includes(r));
+
       const myPurchases = purchases.filter((p) => {
         // Nếu đơn đã hoàn thành hoặc hóa đơn đã hoàn thành thì không hiển thị trong hộp thư cần duyệt
         if (p.status === 'completed' || p.isInvoiceCompleted) return false;
+
+        // Trưởng phòng duyệt yêu cầu sơ bộ Bước 1:
+        if (p.status === 'pending_tp_approval' || p.currentApprovalRole === 'truong_phong') {
+          const tpStep = p.approvalFlow?.find((s: any) => s.role === 'truong_phong');
+          const assignedId = tpStep?.approver ? (typeof tpStep.approver === 'object' ? tpStep.approver._id : tpStep.approver) : null;
+          if (assignedId && String(assignedId) === String(user?._id)) return true;
+          if (!assignedId && hasRole('truong_phong', 'giam_doc', 'chu_tich') && (p.department?._id === user?.department?._id || p.department === user?.department)) {
+            return true;
+          }
+        }
 
         const totalAmount = (p.totalActualAmount && p.totalActualAmount > 0)
           ? p.totalActualAmount
@@ -45,16 +58,15 @@ export const ApprovalPage: React.FC = () => {
         // [QUY TRÌNH 1]: Thu mua nộp 3-4 báo giá trình Giám đốc/Chủ tịch duyệt mua
         if (isPendingLeaderApproval) {
           if (isOverTenMillion) {
-            if (user?.role === 'chu_tich') return true;
-            if (user?.role === 'giam_doc') return false;
+            if (hasRole('chu_tich', 'admin')) return true;
           } else {
-            if (user?.role === 'giam_doc' || user?.role === 'chu_tich') return true;
+            if (hasRole('giam_doc', 'chu_tich', 'admin')) return true;
           }
         }
 
         // [QUY TRÌNH 1]: Kế toán tiếp nhận hóa đơn / hợp đồng từ Thu mua để lập Đề xuất thanh toán
-        if (user?.role === 'ke_toan') {
-          return p.status === 'pending_accounting' || p.status === 'accounting_review';
+        if (hasRole('ke_toan', 'admin') && (p.status === 'pending_accounting' || p.status === 'accounting_review')) {
+          return true;
         }
 
         // [QUY TRÌNH 2]: Khi đơn đã chuyển sang khâu lập đề xuất thanh toán hoặc giải ngân (pending_payment_approval, disbursing),
@@ -63,7 +75,7 @@ export const ApprovalPage: React.FC = () => {
           return false;
         }
 
-        if (p.currentApprovalRole === user?.role) return true;
+        if (p.currentApprovalRole && hasRole(p.currentApprovalRole)) return true;
         return false;
       });
 
@@ -74,37 +86,37 @@ export const ApprovalPage: React.FC = () => {
         const isOverTenMillion = totalAmount > 10000000;
 
         // [LUỒNG MỚI] Đơn tạm ứng <= 10 triệu do Sếp (Giám đốc) duyệt
-        if (user?.role === 'giam_doc') {
-          if (a.status === 'pending_director') {
-            return !isOverTenMillion;
-          }
+        if (a.status === 'pending_director') {
+          if (!isOverTenMillion && hasRole('giam_doc', 'chu_tich', 'admin')) return true;
+          if (isOverTenMillion && hasRole('chu_tich', 'admin')) return true;
           return false;
         }
 
         // [LUỒNG MỚI] Đơn tạm ứng > 10 triệu do Chủ tịch duyệt
-        if (user?.role === 'chu_tich') {
-          if (a.status === 'pending_chairman') return true;
-          if (a.status === 'pending_director' && isOverTenMillion) return true;
-          return a.currentApprovalRole === 'chu_tich';
+        if (a.status === 'pending_chairman') {
+          if (hasRole('chu_tich', 'admin')) return true;
+          return false;
         }
 
         // Kế toán: giải ngân hoặc hoàn ứng
-        if (user?.role === 'ke_toan') {
-          return (
+        if (hasRole('ke_toan', 'admin')) {
+          if (
             a.currentApprovalRole === 'ke_toan' ||
             ['pending_accounting', 'accounting_approved', 'disbursing', 'settlement_submitted'].includes(a.status)
-          );
+          ) {
+            return true;
+          }
         }
 
-        if (a.currentApprovalRole === user?.role) return true;
+        if (a.currentApprovalRole && hasRole(a.currentApprovalRole)) return true;
         if (a.currentApprovalRole === 'creator' && a.creator?._id === user?._id) return true;
         return false;
       });
 
       const myPayments = payments.filter((pay) => {
-        if (user?.role === 'giam_doc') return pay.status === 'pending_director';
-        if (user?.role === 'chu_tich') return pay.status === 'pending_chairman' || pay.status === 'pending_director';
-        if (user?.role === 'ke_toan') return pay.status === 'pending_disbursement';
+        if (pay.status === 'pending_director' && hasRole('giam_doc', 'chu_tich', 'admin')) return true;
+        if (pay.status === 'pending_chairman' && hasRole('chu_tich', 'admin')) return true;
+        if (pay.status === 'pending_disbursement' && hasRole('ke_toan', 'admin')) return true;
         return false;
       });
 

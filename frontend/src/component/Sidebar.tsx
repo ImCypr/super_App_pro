@@ -18,40 +18,15 @@ import { TagLogo } from './TagLogo';
 export const Sidebar: React.FC = () => {
   const { user } = useAuth();
 
-  // Xây dựng danh sách menu điều hướng phân tách nghiêm ngặt theo 1 chức danh duy nhất của tài khoản
+  // Xây dựng danh sách menu điều hướng linh hoạt theo danh sách vai trò (hỗ trợ đa vai trò)
   const buildNavItems = () => {
     if (!user) return [];
 
-    // 1. Phân hệ Admin: Quản trị người dùng & Phân quyền chức danh
-    if (user.role === 'admin') {
-      return [
-        {
-          to: '/dashboard',
-          label: 'Tổng Quan Hệ Thống',
-          icon: <LayoutDashboard size={19} />,
-        },
-        {
-          to: '/admin/users',
-          label: 'Quản Trị Người Dùng',
-          icon: <Users size={19} />,
-          accent: '#8b5cf6', // Tím Admin
-          highlight: true,
-        },
-        {
-          to: '/admin/departments',
-          label: 'Quản Lý Phòng Ban',
-          icon: <Building2 size={19} />,
-        },
-        {
-          to: '/profile',
-          label: 'Hồ Sơ Quản Trị',
-          icon: <UserCheck size={19} />,
-        },
-      ];
-    }
+    const roles = (user.roles && user.roles.length > 0) ? user.roles : [user.role];
+    const hasRole = (...targetRoles: string[]) => targetRoles.some(r => roles.includes(r as any));
 
-    // 2. Tài khoản chưa được gán chức danh (unassigned)
-    if (user.role === 'unassigned') {
+    // 1. Nếu tài khoản CHỈ có vai trò 'unassigned'
+    if (roles.length === 1 && roles[0] === 'unassigned') {
       return [
         {
           to: '/unassigned',
@@ -67,8 +42,13 @@ export const Sidebar: React.FC = () => {
       ];
     }
 
-    // 3. Các vai trò nghiệp vụ thực thi
-    const items = [
+    const items: Array<{
+      to: string;
+      label: string;
+      icon: React.ReactNode;
+      accent?: string;
+      highlight?: boolean;
+    }> = [
       {
         to: '/dashboard',
         label: 'Tổng Quan',
@@ -76,8 +56,26 @@ export const Sidebar: React.FC = () => {
       },
     ];
 
+    // Menu Quản trị hệ thống (nếu có role admin)
+    if (hasRole('admin')) {
+      items.push(
+        {
+          to: '/admin/users',
+          label: 'Quản Trị Người Dùng',
+          icon: <Users size={19} />,
+          accent: '#8b5cf6',
+          highlight: true,
+        },
+        {
+          to: '/admin/departments',
+          label: 'Quản Lý Phòng Ban',
+          icon: <Building2 size={19} />,
+        }
+      );
+    }
+
     // Menu "Cần Tôi Duyệt" - dành cho các cấp có trách nhiệm phê duyệt / khảo giá / giải ngân
-    if (['truong_phong', 'thu_mua', 'ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+    if (hasRole('truong_phong', 'thu_mua', 'ke_toan', 'giam_doc', 'chu_tich')) {
       items.push({
         to: '/approval',
         label: 'Cần Tôi Duyệt',
@@ -86,8 +84,8 @@ export const Sidebar: React.FC = () => {
       });
     }
 
-    // Đề xuất mua sắm: Nhân viên, Trưởng phòng, Thu mua, Ban giám đốc
-    if (['nhan_vien', 'truong_phong', 'thu_mua', 'giam_doc', 'chu_tich'].includes(user.role)) {
+    // Đề xuất mua sắm: Nhân viên, Trưởng phòng, Thu mua, Ban giám đốc, Kế toán
+    if (hasRole('nhan_vien', 'truong_phong', 'thu_mua', 'ke_toan', 'giam_doc', 'chu_tich')) {
       items.push({
         to: '/purchase',
         label: 'Đề Xuất Mua Sắm',
@@ -95,8 +93,8 @@ export const Sidebar: React.FC = () => {
       });
     }
 
-    // Đề xuất thanh toán: Chỉ dành cho Kế toán (lập & giải ngân) và Ban giám đốc (duyệt chi)
-    if (['ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+    // Đề xuất thanh toán: Kế toán (lập & giải ngân) và Ban giám đốc (duyệt chi)
+    if (hasRole('ke_toan', 'giam_doc', 'chu_tich')) {
       items.push({
         to: '/payment',
         label: 'Đề Xuất Thanh Toán',
@@ -105,8 +103,8 @@ export const Sidebar: React.FC = () => {
       });
     }
 
-    // Đề xuất tạm ứng: Dành cho Nhân viên, Thu mua (cần ứng chi phí), Kế toán và Ban giám đốc
-    if (['nhan_vien', 'thu_mua', 'ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+    // Đề xuất tạm ứng: Dành cho Nhân viên, Thu mua (cần ứng chi phí), Trưởng phòng, Kế toán và Ban giám đốc
+    if (hasRole('nhan_vien', 'truong_phong', 'thu_mua', 'ke_toan', 'giam_doc', 'chu_tich')) {
       items.push({
         to: '/advance',
         label: 'Đề Xuất Tạm Ứng',
@@ -117,7 +115,7 @@ export const Sidebar: React.FC = () => {
     // Hồ sơ cá nhân & ngân hàng
     items.push({
       to: '/profile',
-      label: ['ke_toan', 'thu_mua'].includes(user.role) ? 'Hồ Sơ & Ngân Hàng' : 'Hồ Sơ Cá Nhân',
+      label: hasRole('ke_toan', 'thu_mua') ? 'Hồ Sơ & Ngân Hàng' : 'Hồ Sơ Cá Nhân',
       icon: <UserCheck size={19} />,
     });
 
@@ -215,14 +213,20 @@ export const Sidebar: React.FC = () => {
           </span>
         </div>
         <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-          {user?.role === 'admin' && 'Admin: Quản lý người dùng, chức danh và phòng ban.'}
-          {user?.role === 'nhan_vien' && 'Nhân viên: Tạo yêu cầu mua sắm & đề xuất tạm ứng, nộp hoàn tạm ứng.'}
-          {user?.role === 'truong_phong' && 'Trưởng phòng: Duyệt yêu cầu mua sắm của nhân viên trực tiếp quản lý (≤ 1.000.000đ).'}
-          {user?.role === 'thu_mua' && 'Thu mua: Khảo giá 3-4 nhà cung cấp, giải trình mức giá và thực hiện mua hàng.'}
-          {user?.role === 'ke_toan' && 'Kế toán: Tiếp nhận hồ sơ, lập đề xuất thanh toán, giải ngân & quyết toán.'}
-          {user?.role === 'giam_doc' && 'Giám đốc: Duyệt mua sắm (≤ 10.000.000đ), phê duyệt chi thanh toán & tạm ứng.'}
-          {user?.role === 'chu_tich' && 'Chủ tịch: Thẩm quyền duyệt tối cao cho mọi đơn mua sắm > 10.000.000đ & chi lớn.'}
-          {user?.role === 'unassigned' && 'Chưa gán chức danh: Vui lòng liên hệ Quản trị viên để được phân quyền chức danh.'}
+          {(() => {
+            const rs: string[] = user ? ((user.roles && user.roles.length > 0) ? user.roles : [user.role]) : [];
+            const descs: Record<string, string> = {
+              admin: 'Admin: Quản lý người dùng, chức danh và phòng ban.',
+              nhan_vien: 'Nhân viên: Tạo yêu cầu mua sắm & đề xuất tạm ứng, nộp hoàn tạm ứng.',
+              truong_phong: 'Trưởng phòng: Duyệt yêu cầu mua sắm của nhân viên trực tiếp quản lý (≤ 1.000.000đ).',
+              thu_mua: 'Thu mua: Khảo giá 3-4 nhà cung cấp, giải trình mức giá và thực hiện mua hàng.',
+              ke_toan: 'Kế toán: Tiếp nhận hồ sơ, lập đề xuất thanh toán, giải ngân & quyết toán.',
+              giam_doc: 'Giám đốc: Duyệt mua sắm (≤ 10.000.000đ), phê duyệt chi thanh toán & tạm ứng.',
+              chu_tich: 'Chủ tịch: Thẩm quyền duyệt tối cao cho mọi đơn mua sắm > 10.000.000đ & chi lớn.',
+              unassigned: 'Chưa gán chức danh: Vui lòng liên hệ Quản trị viên để được phân quyền chức danh.',
+            };
+            return rs.map((r) => <div key={r} style={{ marginBottom: '0.3rem' }}>{descs[r]}</div>);
+          })()}
         </div>
       </div>
     </aside>

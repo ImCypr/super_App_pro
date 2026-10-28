@@ -11,11 +11,17 @@ class AdvanceProposalService {
    * - Giám đốc tự tạo: chuyển thẳng lên Chủ tịch duyệt
    * - Chủ tịch tự tạo: chuyển thẳng sang Kế toán giải ngân
    */
-  buildApprovalFlow(creatorRole, totalAmount = 0) {
+  buildApprovalFlow(creatorRoleOrRoles, totalAmount = 0) {
     const flow = [];
+    const roles = Array.isArray(creatorRoleOrRoles) ? creatorRoleOrRoles : [creatorRoleOrRoles];
     const isOverTenMillion = Number(totalAmount) > 10000000;
 
-    if (creatorRole === 'nhan_vien' || creatorRole === 'truong_phong' || creatorRole === 'thu_mua' || creatorRole === 'ke_toan') {
+    if (roles.includes('chu_tich')) {
+      // Chủ tịch: bỏ qua cả giám đốc và chủ tịch, chuyển thẳng sang kế toán giải ngân
+    } else if (roles.includes('giam_doc')) {
+      // Giám đốc: bỏ qua duyệt cấp giám đốc, chuyển thẳng lên chủ tịch
+      flow.push({ step: 'Chủ tịch duyệt tạm ứng', role: 'chu_tich', status: 'pending' });
+    } else {
       if (isOverTenMillion) {
         // [LUỒNG MỚI] Đơn > 10 triệu: Chủ tịch trực tiếp duyệt tạm ứng, Giám đốc không duyệt
         flow.push({ step: 'Chủ tịch duyệt tạm ứng', role: 'chu_tich', status: 'pending' });
@@ -23,11 +29,7 @@ class AdvanceProposalService {
         // [LUỒNG MỚI] Đơn <= 10 triệu: Sếp (Giám đốc) duyệt tạm ứng
         flow.push({ step: 'Giám đốc duyệt tạm ứng', role: 'giam_doc', status: 'pending' });
       }
-    } else if (creatorRole === 'giam_doc') {
-      // Giám đốc: bỏ qua duyệt cấp giám đốc, chuyển thẳng lên chủ tịch
-      flow.push({ step: 'Chủ tịch duyệt tạm ứng', role: 'chu_tich', status: 'pending' });
     }
-    // Chủ tịch: bỏ qua cả giám đốc và chủ tịch, chuyển thẳng sang kế toán
 
     flow.push({ step: 'Kế toán duyệt & giải ngân', role: 'ke_toan', status: 'pending' });
     flow.push({ step: 'Thu mua gửi hóa đơn & xác nhận hoàn tạm ứng', role: 'creator', status: 'pending' });
@@ -55,12 +57,16 @@ class AdvanceProposalService {
     const creator = await User.findById(creatorId).populate('department');
     if (!creator) throw new Error('Người dùng không tồn tại');
 
+    const creatorRoles = (Array.isArray(creator.roles) && creator.roles.length > 0)
+      ? creator.roles
+      : [creator.role];
+
     // [LUỒNG MỚI] Tính tổng số tiền tạm ứng từ danh sách items để phân luồng thẩm quyền duyệt chi
     const totalAmount = Array.isArray(data.items)
       ? data.items.reduce((sum, item) => sum + (Number(item.soTien) || 0), 0)
       : (Number(data.totalAmount) || 0);
 
-    const approvalFlow = this.buildApprovalFlow(creator.role, totalAmount);
+    const approvalFlow = this.buildApprovalFlow(creatorRoles, totalAmount);
     const currentApprovalRole = this.getCurrentApprovalRole(approvalFlow);
     const status = this.getStatusFromRole(currentApprovalRole);
 
@@ -83,35 +89,52 @@ class AdvanceProposalService {
     });
 
     return await AdvanceProposal.findById(proposal._id)
-      .populate('creator', 'fullName email role')
+      .populate('creator', 'fullName email role roles')
       .populate('department', 'name')
       .populate('purchaseProposal', 'proposalCode totalEstimatedAmount totalActualAmount procurementExecution')
       .populate('beneficiaryInvoice.purchaseProposal', 'proposalCode totalEstimatedAmount totalActualAmount items procurementExecution');
   }
 
-  async getAll(userId, userRole, userDepartment) {
+  async getAll(userId, userRoleOrRoles, userDepartment) {
+    const userRoles = Array.isArray(userRoleOrRoles)
+      ? userRoleOrRoles
+      : (userRoleOrRoles ? [userRoleOrRoles] : ['unassigned']);
+
     let query = {};
 
-    if (userRole === 'nhan_vien') {
-      query.creator = userId;
-    } else if (userRole === 'truong_phong') {
-      query.department = userDepartment;
-    } else if (userRole === 'thu_mua') {
-      query.creator = userId;
-    } else if (userRole === 'ke_toan') {
-      query.$or = [
-        { currentApprovalRole: 'ke_toan' },
-        { status: { $in: ['disbursing', 'disbursed', 'settlement_submitted', 'completed', 'rejected_by_accounting', 'rejected_settlement'] } },
-        { 'approvalFlow.role': 'ke_toan' },
-        { creator: userId },
-      ];
+    if (userRoles.some((r) => ['giam_doc', 'chu_tich', 'admin'].includes(r))) {
+      query = {};
+    } else {
+      const orConditions = [];
+
+      if (userRoles.includes('nhan_vien') || userRoles.includes('thu_mua')) {
+        orConditions.push({ creator: userId });
+      }
+
+      if (userRoles.includes('truong_phong')) {
+        orConditions.push({ department: userDepartment });
+      }
+
+      if (userRoles.includes('ke_toan')) {
+        orConditions.push(
+          { currentApprovalRole: 'ke_toan' },
+          { status: { $in: ['disbursing', 'disbursed', 'settlement_submitted', 'completed', 'rejected_by_accounting', 'rejected_settlement'] } },
+          { 'approvalFlow.role': 'ke_toan' },
+          { creator: userId }
+        );
+      }
+
+      if (orConditions.length > 0) {
+        query.$or = orConditions;
+      } else {
+        query.creator = userId;
+      }
     }
-    // Giám đốc và Chủ tịch có thể xem toàn bộ đề xuất
 
     return await AdvanceProposal.find(query)
-      .populate('creator', 'fullName email role')
+      .populate('creator', 'fullName email role roles')
       .populate('department', 'name')
-      .populate('approvalFlow.approver', 'fullName role')
+      .populate('approvalFlow.approver', 'fullName role roles')
       .populate('disbursements.processedBy', 'fullName')
       .populate('purchaseProposal', 'proposalCode totalEstimatedAmount totalActualAmount')
       .sort({ createdAt: -1 });
@@ -119,9 +142,9 @@ class AdvanceProposalService {
 
   async getById(id) {
     const proposal = await AdvanceProposal.findById(id)
-      .populate('creator', 'fullName email role department bankAccount')
+      .populate('creator', 'fullName email role roles department bankAccount')
       .populate('department', 'name')
-      .populate('approvalFlow.approver', 'fullName role')
+      .populate('approvalFlow.approver', 'fullName role roles')
       .populate('disbursements.processedBy', 'fullName')
       .populate('settlement.confirmedBy', 'fullName')
       .populate('settlement.requestedBy', 'fullName')
@@ -139,6 +162,10 @@ class AdvanceProposalService {
     const approver = await User.findById(approverId);
     if (!approver) throw new Error('Người duyệt không tồn tại');
 
+    const approverRoles = (Array.isArray(approver.roles) && approver.roles.length > 0)
+      ? approver.roles
+      : [approver.role];
+
     const currentStepIndex = proposal.approvalFlow.findIndex(step => step.status === 'pending');
     if (currentStepIndex === -1) throw new Error('Không có bước duyệt nào đang chờ');
 
@@ -147,15 +174,15 @@ class AdvanceProposalService {
     const isStepChairman = currentStep.role === 'chu_tich';
     const isStepDirector = currentStep.role === 'giam_doc';
 
-    if (isStepChairman && approver.role !== 'chu_tich') {
+    if (isStepChairman && !approverRoles.some(r => ['chu_tich', 'admin'].includes(r))) {
       throw new Error('Đơn tạm ứng trên 10.000.000 VNĐ thuộc thẩm quyền Chủ tịch phê duyệt');
     }
 
-    if (isStepDirector && approver.role !== 'giam_doc' && approver.role !== 'chu_tich') {
+    if (isStepDirector && !approverRoles.some(r => ['giam_doc', 'chu_tich', 'admin'].includes(r))) {
       throw new Error('Bạn không có quyền duyệt bước này');
     }
 
-    if (!isStepChairman && !isStepDirector && currentStep.role !== approver.role) {
+    if (!isStepChairman && !isStepDirector && !approverRoles.some(r => [currentStep.role, 'admin'].includes(r))) {
       throw new Error('Bạn không có quyền duyệt bước này');
     }
 
@@ -187,6 +214,10 @@ class AdvanceProposalService {
     const approver = await User.findById(approverId);
     if (!approver) throw new Error('Người duyệt không tồn tại');
 
+    const approverRoles = (Array.isArray(approver.roles) && approver.roles.length > 0)
+      ? approver.roles
+      : [approver.role];
+
     const currentStepIndex = proposal.approvalFlow.findIndex(step => step.status === 'pending');
     if (currentStepIndex === -1) throw new Error('Không có bước duyệt nào đang chờ');
 
@@ -195,15 +226,15 @@ class AdvanceProposalService {
     const isStepChairman = currentStep.role === 'chu_tich';
     const isStepDirector = currentStep.role === 'giam_doc';
 
-    if (isStepChairman && approver.role !== 'chu_tich') {
+    if (isStepChairman && !approverRoles.some(r => ['chu_tich', 'admin'].includes(r))) {
       throw new Error('Đơn tạm ứng trên 10.000.000 VNĐ thuộc thẩm quyền Chủ tịch xem xét');
     }
 
-    if (isStepDirector && approver.role !== 'giam_doc' && approver.role !== 'chu_tich') {
+    if (isStepDirector && !approverRoles.some(r => ['giam_doc', 'chu_tich', 'admin'].includes(r))) {
       throw new Error('Bạn không có quyền từ chối bước này');
     }
 
-    if (!isStepChairman && !isStepDirector && currentStep.role !== approver.role) {
+    if (!isStepChairman && !isStepDirector && !approverRoles.some(r => [currentStep.role, 'admin'].includes(r))) {
       throw new Error('Bạn không có quyền từ chối bước này');
     }
 
@@ -213,11 +244,11 @@ class AdvanceProposalService {
     currentStep.date = new Date();
 
     // [QUY TRÌNH MỚI] Nếu đơn tạm ứng bị từ chối, trả về bước trước đó (Người tạo) để làm lại
-    if (isStepChairman || approver.role === 'chu_tich') {
+    if (isStepChairman) {
       proposal.status = 'rejected_by_chairman';
-    } else if (isStepDirector || approver.role === 'giam_doc') {
+    } else if (isStepDirector) {
       proposal.status = 'rejected_by_director';
-    } else if (currentStep.role === 'ke_toan' || approver.role === 'ke_toan') {
+    } else if (currentStep.role === 'ke_toan') {
       proposal.status = 'rejected_by_accounting';
     } else {
       proposal.status = 'rejected';
@@ -270,7 +301,10 @@ class AdvanceProposalService {
     proposal.totalAmount = totalAmount;
 
     // Xây dựng lại luồng phê duyệt từ đầu theo số tiền mới
-    const approvalFlow = this.buildApprovalFlow(creator.role, totalAmount);
+    const approvalFlow = this.buildApprovalFlow(
+      (Array.isArray(creator.roles) && creator.roles.length > 0) ? creator.roles : [creator.role],
+      totalAmount
+    );
     const currentApprovalRole = this.getCurrentApprovalRole(approvalFlow);
     const status = this.getStatusFromRole(currentApprovalRole);
 

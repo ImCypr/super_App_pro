@@ -32,7 +32,7 @@ import {
 
 export const PaymentDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   const [proposal, setProposal] = useState<PaymentProposal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -217,9 +217,9 @@ export const PaymentDetailPage: React.FC = () => {
   const isLeaderPending = proposal.status === 'pending_director' || proposal.status === 'pending_chairman';
   const canApprove =
     isLeaderPending &&
-    ((isOverTenMillion && user?.role === 'chu_tich') ||
-     (!isOverTenMillion && (user?.role === 'giam_doc' || user?.role === 'chu_tich')));
-  const canDisburse = proposal.status === 'pending_disbursement' && user?.role === 'ke_toan';
+    ((isOverTenMillion && hasRole('chu_tich')) ||
+     (!isOverTenMillion && hasRole('giam_doc', 'chu_tich')));
+  const canDisburse = proposal.status === 'pending_disbursement' && hasRole('ke_toan');
   const isDisburseTurn = canDisburse;
 
   const purchaseProposal = typeof proposal.purchaseProposal === 'object' ? proposal.purchaseProposal : null;

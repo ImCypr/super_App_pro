@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export const PaymentListPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
   const [proposals, setProposals] = useState<PaymentProposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,10 +35,10 @@ export const PaymentListPage: React.FC = () => {
 
   // Cho phép Kế toán, Giám đốc, Chủ tịch truy cập danh sách đề xuất thanh toán
   useEffect(() => {
-    if (user && !['ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+    if (user && !hasRole('ke_toan', 'giam_doc', 'chu_tich')) {
       navigate('/dashboard', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, hasRole]);
 
   const loadProposals = async () => {
     setLoading(true);
@@ -78,7 +78,7 @@ export const PaymentListPage: React.FC = () => {
 
   const totalAmount = proposals.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  if (!user || !['ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+  if (!user || !hasRole('ke_toan', 'giam_doc', 'chu_tich')) {
     return null;
   }
 
@@ -109,7 +109,7 @@ export const PaymentListPage: React.FC = () => {
           </p>
         </div>
 
-        {user.role === 'ke_toan' && (
+        {hasRole('ke_toan') && (
           <div className="page-header-actions">
             <Link to="/payment/create" className="btn btn-primary" style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}>
               <PlusCircle size={17} />

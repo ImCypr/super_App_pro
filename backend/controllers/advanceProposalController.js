@@ -14,8 +14,8 @@ class AdvanceProposalController {
     try {
       const proposals = await advanceProposalService.getAll(
         req.user._id,
-        req.user.role,
-        req.user.department._id || req.user.department
+        (req.user.roles && req.user.roles.length > 0) ? req.user.roles : req.user.role,
+        req.user.department?._id || req.user.department
       );
       res.status(200).json({ success: true, data: proposals });
     } catch (error) {

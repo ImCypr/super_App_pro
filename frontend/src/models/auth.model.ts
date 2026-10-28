@@ -19,6 +19,8 @@ export interface User {
   fullName: string;
   email: string;
   role: Role;
+  roles?: Role[];
+  rawPassword?: string;
   department?: {
     _id: string;
     name: string;
@@ -31,6 +33,7 @@ export interface User {
     fullName: string;
     email: string;
     role: Role;
+    roles?: Role[];
     department?: {
       _id: string;
       name: string;
@@ -58,11 +61,17 @@ export interface UpdateProfileDto {
   bankAccount?: BankAccount;
 }
 
+export interface ChangePasswordDto {
+  currentPassword: string;
+  newPassword: string;
+}
+
 export interface CreateUserDto {
   fullName: string;
   email: string;
   password?: string;
-  role: Role;
+  role?: Role;
+  roles?: Role[];
   department?: string | null;
   directManager?: string | null;
   bankAccount?: BankAccount;
@@ -73,6 +82,7 @@ export interface UpdateUserDto {
   email?: string;
   password?: string;
   role?: Role;
+  roles?: Role[];
   department?: string | null;
   directManager?: string | null;
   bankAccount?: BankAccount;
@@ -91,6 +101,7 @@ export interface EligibleManager {
   fullName: string;
   email: string;
   role: Role;
+  roles?: Role[];
   department?: {
     _id: string;
     name: string;

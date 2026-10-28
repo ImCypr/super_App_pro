@@ -18,6 +18,8 @@ import {
   GitFork,
   X,
   RefreshCw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { adminService } from '../../services/adminService';
 import { departmentService } from '../../services/departmentService';
@@ -49,6 +51,13 @@ export const UserManagementPage: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  // State hiển thị mật khẩu của từng người dùng (ẩn ban đầu)
+  const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
+
+  const togglePasswordVisibility = (userId: string) => {
+    setVisiblePasswords((prev) => ({ ...prev, [userId]: !prev[userId] }));
+  };
+
   // Bộ lọc
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -63,13 +72,14 @@ export const UserManagementPage: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState<User | null>(null);
   const [showRemoveRoleModal, setShowRemoveRoleModal] = useState<User | null>(null);
 
-  // Form state cho Tạo mới
+  // Form state cho Tạo mới (hỗ trợ nhiều role)
   const [createForm, setCreateForm] = useState({
     fullName: '',
     email: '',
     password: '123456',
     department: '',
     role: 'nhan_vien' as Role,
+    roles: ['nhan_vien'] as Role[],
     directManager: '',
     bankAccount: {
       accountNumber: '',
@@ -78,11 +88,37 @@ export const UserManagementPage: React.FC = () => {
     },
   });
 
-  // Form state cho Đổi chức danh
+  // Form state cho Đổi chức danh (hỗ trợ chọn nhiều role cùng lúc)
   const [selectedRole, setSelectedRole] = useState<Role>('nhan_vien');
+  const [selectedRoles, setSelectedRoles] = useState<Role[]>(['nhan_vien']);
 
   // Form state cho Đổi Trưởng phòng trực tiếp
   const [selectedManagerId, setSelectedManagerId] = useState<string>('');
+
+  // Form state cho Sửa thông tin người dùng (Admin)
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    department: '',
+    accountNumber: '',
+    bankName: '',
+    accountHolder: '',
+  });
+
+  const openEditModal = (u: User) => {
+    const deptId = typeof u.department === 'object' && u.department ? (u.department as any)._id : (u.department as any) || '';
+    setEditForm({
+      fullName: u.fullName || '',
+      email: u.email || '',
+      password: '',
+      department: deptId,
+      accountNumber: u.bankAccount?.accountNumber || '',
+      bankName: u.bankAccount?.bankName || '',
+      accountHolder: u.bankAccount?.accountHolder || '',
+    });
+    setShowEditModal(u);
+  };
 
   // Tải toàn bộ dữ liệu quản trị
   const loadData = useCallback(async () => {
@@ -121,6 +157,38 @@ export const UserManagementPage: React.FC = () => {
   };
 
   // Xử lý Tạo người dùng mới
+  // Xử lý bật/tắt vai trò khi Tạo mới
+  const handleToggleCreateRole = (role: Role) => {
+    setCreateForm((prev) => {
+      let nextRoles: Role[];
+      if (prev.roles.includes(role)) {
+        nextRoles = prev.roles.filter((r) => r !== role);
+        if (nextRoles.length === 0) nextRoles = ['unassigned'];
+      } else {
+        nextRoles = [...prev.roles.filter((r) => r !== 'unassigned'), role];
+      }
+      return {
+        ...prev,
+        roles: nextRoles,
+        role: nextRoles[0] || 'unassigned',
+      };
+    });
+  };
+
+  // Xử lý bật/tắt vai trò trong Modal Gán / Đổi Chức danh
+  const handleToggleModalRole = (role: Role) => {
+    setSelectedRoles((prev) => {
+      if (prev.includes(role)) {
+        const next = prev.filter((r) => r !== role);
+        return next.length > 0 ? next : ['unassigned'];
+      } else {
+        const clean = prev.filter((r) => r !== 'unassigned');
+        return [...clean, role];
+      }
+    });
+  };
+
+  // Xử lý Tạo người dùng mới
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.fullName.trim() || !createForm.email.trim()) {
@@ -134,7 +202,8 @@ export const UserManagementPage: React.FC = () => {
         fullName: createForm.fullName,
         email: createForm.email,
         password: createForm.password,
-        role: createForm.role,
+        role: createForm.roles[0] || 'nhan_vien',
+        roles: createForm.roles,
         department: createForm.department || null,
         directManager: createForm.directManager || null,
         bankAccount: createForm.bankAccount,
@@ -148,6 +217,7 @@ export const UserManagementPage: React.FC = () => {
         password: '123456',
         department: '',
         role: 'nhan_vien',
+        roles: ['nhan_vien'],
         directManager: '',
         bankAccount: { accountNumber: '', bankName: '', accountHolder: '' },
       });
@@ -159,13 +229,49 @@ export const UserManagementPage: React.FC = () => {
     }
   };
 
-  // Xử lý Cập nhật / Gán Chức Danh
+  // Xử lý Admin sửa thông tin người dùng
+  const handleEditUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEditModal) return;
+    if (!editForm.fullName.trim() || !editForm.email.trim()) {
+      showToast('error', 'Họ tên và Tài khoản đăng nhập không được để trống');
+      return;
+    }
+    if (editForm.password && editForm.password.trim().length < 6) {
+      showToast('error', 'Mật khẩu mới phải từ 6 ký tự trở lên');
+      return;
+    }
+    setActionLoading(true);
+    try {
+      await adminService.updateUser(showEditModal._id, {
+        fullName: editForm.fullName,
+        email: editForm.email,
+        department: editForm.department || null,
+        bankAccount: {
+          accountNumber: editForm.accountNumber,
+          bankName: editForm.bankName,
+          accountHolder: editForm.accountHolder,
+        },
+        ...(editForm.password.trim() ? { password: editForm.password.trim() } : {}),
+      });
+      showToast('success', `Đã cập nhật thông tin của ${editForm.fullName}`);
+      setShowEditModal(null);
+      loadData();
+    } catch (err: any) {
+      showToast('error', err.response?.data?.message || err.message || 'Không thể cập nhật thông tin');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Xử lý Cập nhật / Gán Chức Danh (Đa vai trò)
   const handleUpdateRole = async () => {
     if (!showRoleModal) return;
     setActionLoading(true);
     try {
-      await adminService.updateUserRole(showRoleModal._id, selectedRole);
-      showToast('success', `Đã cập nhật chức danh của ${showRoleModal.fullName} thành: ${getRoleLabel(selectedRole)}`);
+      await adminService.updateUserRole(showRoleModal._id, selectedRoles);
+      const rolesLabel = selectedRoles.map((r) => getRoleLabel(r)).join(', ');
+      showToast('success', `Đã cập nhật các chức danh của ${showRoleModal.fullName}: ${rolesLabel}`);
       setShowRoleModal(null);
       loadData();
     } catch (err: any) {
@@ -254,7 +360,10 @@ export const UserManagementPage: React.FC = () => {
         u.fullName.toLowerCase().includes(search.toLowerCase()) ||
         u.email.toLowerCase().includes(search.toLowerCase());
 
-      const matchRole = roleFilter === 'all' || u.role === roleFilter;
+      const matchRole =
+        roleFilter === 'all' ||
+        u.role === roleFilter ||
+        (Array.isArray(u.roles) && u.roles.includes(roleFilter as Role));
 
       const userDeptId = typeof u.department === 'object' && u.department ? (u.department as any)._id : u.department;
       const matchDept = deptFilter === 'all' || userDeptId === deptFilter;
@@ -337,7 +446,7 @@ export const UserManagementPage: React.FC = () => {
               Quản Trị Người Dùng & Phân Quyền Chức Danh
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0.35rem 0 0 0' }}>
-              Mỗi tài khoản đảm nhiệm đúng 1 chức danh duy nhất. Thiết lập Trưởng phòng trực tiếp duyệt đơn mua sắm.
+              Mỗi tài khoản có thể đảm nhiệm một hoặc nhiều chức danh. Thiết lập Trưởng phòng trực tiếp duyệt đơn mua sắm.
             </p>
           </div>
         </div>
@@ -511,6 +620,9 @@ export const UserManagementPage: React.FC = () => {
                   Chức Danh Nghiệp Vụ
                 </th>
                 <th style={{ padding: '1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
+                  Mật Khẩu
+                </th>
+                <th style={{ padding: '1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
                   Trưởng Phòng Trực Tiếp
                 </th>
                 <th style={{ padding: '1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>
@@ -524,7 +636,7 @@ export const UserManagementPage: React.FC = () => {
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem' }}>
                       <RefreshCw size={24} className="spin" />
                       <span>Đang tải danh sách người dùng...</span>
@@ -533,7 +645,7 @@ export const UserManagementPage: React.FC = () => {
                 </tr>
               ) : filteredUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <td colSpan={7} style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
                       <Users size={32} style={{ opacity: 0.4 }} />
                       <span style={{ fontWeight: 600 }}>Không tìm thấy người dùng phù hợp</span>
@@ -547,6 +659,7 @@ export const UserManagementPage: React.FC = () => {
                     typeof u.department === 'object' && u.department ? (u.department as any).name : 'Chưa phân phòng ban';
 
                   const mgr = typeof u.directManager === 'object' && u.directManager ? (u.directManager as any) : null;
+                  const userRoles = (u.roles && u.roles.length > 0) ? u.roles : [u.role];
 
                   return (
                     <tr
@@ -598,16 +711,61 @@ export const UserManagementPage: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Cột 3: Chức danh */}
+                      {/* Cột 3: Chức danh (hỗ trợ nhiều chức danh) */}
                       <td style={{ padding: '1rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          <span className={`badge ${getRoleBadgeClass(u.role)}`}>
-                            {getRoleLabel(u.role)}
-                          </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem', maxWidth: '260px' }}>
+                          {userRoles.map((r) => (
+                            <span key={r} className={`badge ${getRoleBadgeClass(r)}`}>
+                              {getRoleLabel(r)}
+                            </span>
+                          ))}
                         </div>
                       </td>
 
-                      {/* Cột 4: Trưởng phòng trực tiếp */}
+                      {/* Cột 4: Mật khẩu (Trạng thái ban đầu ********, bấm con mắt để xem) */}
+                      <td style={{ padding: '1rem' }}>
+                        <div
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            padding: '0.3rem 0.6rem',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <span
+                            className="font-mono"
+                            style={{
+                              fontSize: '0.82rem',
+                              letterSpacing: visiblePasswords[u._id] ? '0' : '0.15em',
+                              color: visiblePasswords[u._id] ? '#38bdf8' : 'var(--text-muted)',
+                              fontWeight: visiblePasswords[u._id] ? 600 : 400,
+                            }}
+                          >
+                            {visiblePasswords[u._id] ? (u.rawPassword || '123456') : '••••••••'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => togglePasswordVisibility(u._id)}
+                            title={visiblePasswords[u._id] ? 'Ẩn mật khẩu' : 'Xem mật khẩu'}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: visiblePasswords[u._id] ? '#38bdf8' : 'var(--text-muted)',
+                              cursor: 'pointer',
+                              padding: '2px',
+                              display: 'flex',
+                              alignItems: 'center',
+                            }}
+                          >
+                            {visiblePasswords[u._id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        </div>
+                      </td>
+
+                      {/* Cột 5: Trưởng phòng trực tiếp */}
                       <td style={{ padding: '1rem' }}>
                         {mgr ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
@@ -621,7 +779,7 @@ export const UserManagementPage: React.FC = () => {
                               </div>
                             </div>
                           </div>
-                        ) : ['giam_doc', 'chu_tich', 'admin'].includes(u.role) ? (
+                        ) : userRoles.some((r) => ['giam_doc', 'chu_tich', 'admin'].includes(r)) ? (
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
                             Cấp lãnh đạo tối cao
                           </span>
@@ -633,7 +791,7 @@ export const UserManagementPage: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Cột 5: Trạng thái */}
+                      {/* Cột 6: Trạng thái */}
                       <td style={{ padding: '1rem' }}>
                         {u.isActive ? (
                           <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>
@@ -648,18 +806,31 @@ export const UserManagementPage: React.FC = () => {
                         )}
                       </td>
 
-                      {/* Cột 6: Hành động */}
+                      {/* Cột 7: Hành động */}
                       <td style={{ padding: '1rem', textAlign: 'right' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}>
+                          {/* Nút Sửa thông tin */}
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-secondary"
+                            onClick={() => openEditModal(u)}
+                            title="Sửa thông tin người dùng"
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                          >
+                            <Edit2 size={14} style={{ color: '#3b82f6' }} />
+                            <span>Sửa</span>
+                          </button>
+
                           {/* Nút Gán / Đổi chức danh */}
                           <button
                             type="button"
                             className="btn btn-sm btn-secondary"
                             onClick={() => {
                               setShowRoleModal(u);
-                              setSelectedRole(u.role);
+                              const roles = (u.roles && u.roles.length > 0) ? u.roles : [u.role];
+                              setSelectedRoles(roles);
                             }}
-                            title="Gán hoặc đổi chức danh"
+                            title="Gán hoặc đổi chức danh (hỗ trợ đa vai trò)"
                             style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}
                           >
                             <ShieldCheck size={14} style={{ color: '#8b5cf6' }} />
@@ -667,7 +838,7 @@ export const UserManagementPage: React.FC = () => {
                           </button>
 
                           {/* Nút Gán Trưởng phòng trực tiếp */}
-                          {u.role !== 'admin' && !['giam_doc', 'chu_tich'].includes(u.role) && (
+                          {!userRoles.includes('admin') && !userRoles.some((r) => ['giam_doc', 'chu_tich'].includes(r)) && (
                             <button
                               type="button"
                               className="btn btn-sm btn-secondary"
@@ -731,6 +902,128 @@ export const UserManagementPage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* ================= MODAL: SỬA THÔNG TIN NGƯỜI DÙNG ================= */}
+      {showEditModal && (
+        <div className="modal-backdrop" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: '560px',
+              width: '90%',
+              backgroundColor: 'var(--surface-color)',
+              borderRadius: 'var(--radius-xl)',
+              border: '1px solid var(--border-color)',
+              padding: '1.75rem',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
+                Sửa Thông Tin Người Dùng
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowEditModal(null)}
+                style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditUser} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>Họ và Tên *</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  maxLength={100}
+                  value={editForm.fullName}
+                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>Tài Khoản Đăng Nhập *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    maxLength={50}
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>Mật Khẩu Mới</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    maxLength={50}
+                    placeholder="Để trống nếu không đổi"
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>Phòng Ban</label>
+                <select
+                  className="form-input"
+                  value={editForm.department}
+                  onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                >
+                  <option value="">Chưa phân phòng ban</option>
+                  {departments.map((d) => (
+                    <option key={d._id} value={d._id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>Số Tài Khoản</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editForm.accountNumber}
+                    onChange={(e) => setEditForm({ ...editForm, accountNumber: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>Ngân Hàng</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editForm.bankName}
+                    onChange={(e) => setEditForm({ ...editForm, bankName: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontWeight: 600 }}>Chủ Tài Khoản</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editForm.accountHolder}
+                    onChange={(e) => setEditForm({ ...editForm, accountHolder: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(null)} disabled={actionLoading}>
+                  Hủy
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={actionLoading}>
+                  {actionLoading ? 'Đang lưu...' : 'Lưu Thay Đổi'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ================= MODAL 1: TẠO NGƯỜI DÙNG MỚI ================= */}
       {showCreateModal && (
@@ -808,40 +1101,60 @@ export const UserManagementPage: React.FC = () => {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600 }}>Phòng Ban Trực Thuộc</label>
-                  <select
-                    className="form-control"
-                    value={createForm.department}
-                    onChange={(e) => setCreateForm({ ...createForm, department: e.target.value })}
-                  >
-                    <option value="">-- Chọn phòng ban --</option>
-                    {departments.map((d) => (
-                      <option key={d._id} value={d._id}>{d.name}</option>
-                    ))}
-                  </select>
-                </div>
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>Phòng Ban Trực Thuộc</label>
+                <select
+                  className="form-control"
+                  value={createForm.department}
+                  onChange={(e) => setCreateForm({ ...createForm, department: e.target.value })}
+                >
+                  <option value="">-- Chọn phòng ban --</option>
+                  {departments.map((d) => (
+                    <option key={d._id} value={d._id}>{d.name}</option>
+                  ))}
+                </select>
+              </div>
 
-                <div>
-                  <label className="form-label" style={{ fontWeight: 600 }}>Chức Danh Nghiệp Vụ *</label>
-                  <select
-                    className="form-control"
-                    value={createForm.role}
-                    onChange={(e) => setCreateForm({ ...createForm, role: e.target.value as Role })}
-                    style={{ fontWeight: 600, color: '#a78bfa' }}
-                  >
-                    {ALL_ROLES.map((r) => (
-                      <option key={r.value} value={r.value}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
+              <div>
+                <label className="form-label" style={{ fontWeight: 600 }}>
+                  Chức Danh Đảm Nhận (Có thể chọn 2 hay nhiều vai trò) *
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.35rem' }}>
+                  {ALL_ROLES.map((r) => {
+                    const isChecked = createForm.roles.includes(r.value);
+                    return (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => handleToggleCreateRole(r.value)}
+                        style={{
+                          padding: '0.35rem 0.65rem',
+                          borderRadius: '20px',
+                          border: `1.5px solid ${isChecked ? '#8b5cf6' : 'var(--border-subtle)'}`,
+                          backgroundColor: isChecked ? 'rgba(139, 92, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                          color: isChecked ? '#c4b5fd' : 'var(--text-secondary)',
+                          fontSize: '0.78rem',
+                          fontWeight: isChecked ? 600 : 400,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          transition: 'all 0.15s ease',
+                        }}
+                      >
+                        {isChecked && <CheckCircle2 size={13} color="#a78bfa" />}
+                        <span>{r.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }}>
+                  Đã chọn: <strong style={{ color: '#a78bfa' }}>{createForm.roles.map((r) => getRoleLabel(r)).join(' • ')}</strong>
                 </div>
               </div>
 
               {/* Chỉ định Trưởng phòng trực tiếp nếu vai trò là nhân viên hoặc thu mua */}
-              {['nhan_vien', 'thu_mua', 'unassigned'].includes(createForm.role) && (
+              {(createForm.roles.includes('nhan_vien') || createForm.roles.includes('thu_mua')) && (
                 <div style={{ backgroundColor: 'rgba(255, 255, 255, 0.02)', padding: '0.85rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
                   <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                     <GitFork size={15} color="#10b981" />
@@ -894,7 +1207,7 @@ export const UserManagementPage: React.FC = () => {
           <div
             className="modal-content"
             style={{
-              maxWidth: '480px',
+              maxWidth: '500px',
               width: '90%',
               backgroundColor: 'var(--surface-color)',
               borderRadius: 'var(--radius-xl)',
@@ -927,16 +1240,23 @@ export const UserManagementPage: React.FC = () => {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
-                <label className="form-label" style={{ fontWeight: 600 }}>Chọn Chức Danh Nghiệp Vụ Mới:</label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <label className="form-label" style={{ fontWeight: 600, margin: 0 }}>
+                    Chọn Chức Danh Đảm Nhận (Có thể chọn nhiều role):
+                  </label>
+                  <span style={{ fontSize: '0.75rem', color: '#a78bfa', fontWeight: 600 }}>
+                    {selectedRoles.length} vai trò đã chọn
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.65rem', maxHeight: '360px', overflowY: 'auto', paddingRight: '0.25rem' }}>
                   {ALL_ROLES.map((r) => {
-                    const isSelected = selectedRole === r.value;
+                    const isSelected = selectedRoles.includes(r.value);
                     return (
                       <div
                         key={r.value}
-                        onClick={() => setSelectedRole(r.value)}
+                        onClick={() => handleToggleModalRole(r.value)}
                         style={{
-                          padding: '0.75rem 1rem',
+                          padding: '0.7rem 1rem',
                           borderRadius: 'var(--radius-md)',
                           border: `1.5px solid ${isSelected ? '#7c3aed' : 'var(--border-subtle)'}`,
                           backgroundColor: isSelected ? 'rgba(124, 58, 237, 0.12)' : 'rgba(255, 255, 255, 0.02)',
@@ -955,14 +1275,35 @@ export const UserManagementPage: React.FC = () => {
                             {r.desc}
                           </div>
                         </div>
-                        {isSelected && <CheckCircle2 size={18} color="#a78bfa" />}
+                        <div
+                          style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: '4px',
+                            border: `1.5px solid ${isSelected ? '#7c3aed' : 'var(--border-color)'}`,
+                            backgroundColor: isSelected ? '#7c3aed' : 'transparent',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isSelected && <CheckCircle2 size={15} color="#ffffff" />}
+                        </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1rem' }}>
+              <div style={{ padding: '0.75rem 0.85rem', backgroundColor: 'rgba(255, 255, 255, 0.03)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)', fontSize: '0.8rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Các chức danh sẽ được cấp quyền: </span>
+                <strong style={{ color: '#c4b5fd' }}>
+                  {selectedRoles.map((r) => getRoleLabel(r)).join(' • ')}
+                </strong>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
                 <button
                   type="button"
                   className="btn btn-secondary"
@@ -978,7 +1319,7 @@ export const UserManagementPage: React.FC = () => {
                   disabled={actionLoading}
                   style={{ backgroundColor: '#7c3aed', borderColor: '#7c3aed' }}
                 >
-                  {actionLoading ? 'Đang cập nhật...' : 'Lưu Chức Danh'}
+                  {actionLoading ? 'Đang lưu...' : 'Lưu Danh Sách Chức Danh'}
                 </button>
               </div>
             </div>

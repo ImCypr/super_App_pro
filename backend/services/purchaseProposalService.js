@@ -8,23 +8,25 @@ class PurchaseProposalService {
   /**
    * [LUỒNG CẬP NHẬT] Xây dựng luồng phê duyệt dựa theo vai trò người tạo đơn:
    *
-   * - Nếu người tạo là NHÂN VIÊN (role = 'nhan_vien'):
+   * - Nếu người tạo CHỈ LÀ NHÂN VIÊN (role = 'nhan_vien' và không có vai trò quản lý):
    *   Bước 1: Trưởng phòng trực tiếp (directManager) duyệt yêu cầu vật tư
    *   Bước 2: Thu mua lập 3-4 báo giá + giải trình, gửi lên Giám đốc
    *   Bước 3: Giám đốc / Chủ tịch xem báo giá và phê duyệt mua
    *   Bước 4: Thu mua thực hiện mua sắm
    *   Bước 5: Kế toán thanh toán / tạm ứng
    *
-   * - Nếu người tạo là QUẢN LÝ CẤP CAO (truong_phong / giam_doc / chu_tich):
+   * - Nếu người tạo là QUẢN LÝ CẤP CAO (có vai trò truong_phong / giam_doc / chu_tich):
    *   Bỏ qua bước 1, đơn đi thẳng vào Bước 2 (Thu mua lập báo giá)
    *   Bước 2 → 5 giữ nguyên như nhân viên.
    */
-  buildInitialApprovalFlow(creatorRole) {
+  buildInitialApprovalFlow(creatorRoleOrRoles) {
+    const roles = Array.isArray(creatorRoleOrRoles) ? creatorRoleOrRoles : [creatorRoleOrRoles];
+    const isManagerOrAbove = roles.some(r => ['truong_phong', 'giam_doc', 'chu_tich'].includes(r));
     const flow = [];
 
-    // Bước 1: CHỈ áp dụng khi người tạo là nhân viên thường
+    // Bước 1: CHỈ áp dụng khi người tạo là nhân viên thường (không có vai trò quản lý)
     // Trưởng phòng / Giám đốc / Chủ tịch tự tạo đơn thì BỎ QUA bước này
-    if (creatorRole === 'nhan_vien') {
+    if (!isManagerOrAbove) {
       flow.push({
         step: 'Trưởng phòng trực tiếp duyệt yêu cầu',
         role: 'truong_phong',
@@ -54,15 +56,19 @@ class PurchaseProposalService {
   }
 
   async create(creatorId, data) {
-    const creator = await User.findById(creatorId).populate('department').populate('directManager', 'fullName email role');
+    const creator = await User.findById(creatorId).populate('department').populate('directManager', 'fullName email role roles');
     if (!creator) throw new Error('Người dùng không tồn tại');
 
-    const approvalFlow = this.buildInitialApprovalFlow(creator.role);
+    const creatorRoles = (Array.isArray(creator.roles) && creator.roles.length > 0)
+      ? creator.roles
+      : [creator.role];
+
+    const approvalFlow = this.buildInitialApprovalFlow(creatorRoles);
 
     // [LUỒNG CẬP NHẬT] Phân biệt trạng thái ban đầu theo vai trò người tạo:
-    // - Nhân viên: chờ trưởng phòng trực tiếp duyệt (pending_tp_approval)
-    // - Quản lý cấp cao (truong_phong / giam_doc / chu_tich): bỏ qua bước TP, đi thẳng vào Thu mua (procurement_pricing)
-    const isManagerOrAbove = ['truong_phong', 'giam_doc', 'chu_tich'].includes(creator.role);
+    // - Nhân viên thường: chờ trưởng phòng trực tiếp duyệt (pending_tp_approval)
+    // - Quản lý cấp cao (có truong_phong / giam_doc / chu_tich): bỏ qua bước TP, đi thẳng vào Thu mua (procurement_pricing)
+    const isManagerOrAbove = creatorRoles.some(r => ['truong_phong', 'giam_doc', 'chu_tich'].includes(r));
     const status = isManagerOrAbove ? 'procurement_pricing' : 'pending_tp_approval';
     const currentApprovalRole = isManagerOrAbove ? 'thu_mua' : 'truong_phong';
 
@@ -98,73 +104,87 @@ class PurchaseProposalService {
     });
 
     return await PurchaseProposal.findById(proposal._id)
-      .populate('creator', 'fullName email role')
+      .populate('creator', 'fullName email role roles')
       .populate('department', 'name');
   }
 
-  async getAll(userId, userRole, userDepartment) {
+  async getAll(userId, userRoleOrRoles, userDepartment) {
+    const userRoles = Array.isArray(userRoleOrRoles)
+      ? userRoleOrRoles
+      : (userRoleOrRoles ? [userRoleOrRoles] : ['unassigned']);
+
     let query = {};
 
-    // Lọc danh sách đề xuất theo vai trò của người dùng
-    if (userRole === 'nhan_vien') {
-      // Nhân viên: chỉ xem đề xuất do chính mình tạo (kể cả đơn bị từ chối gửi về)
-      query.creator = userId;
-    } else if (userRole === 'truong_phong') {
-      // Trưởng phòng: xem các đơn do nhân viên mình quản lý gửi lên (directManager trỏ tới mình)
-      // VÀ cả đơn của phòng ban mình (tương thích ngược với dữ liệu cũ không có directManager)
-      query.$or = [
-        {
-          // Đơn nhân viên gửi lên trưởng phòng cụ thể này (đã thiết lập directManager)
-          'approvalFlow.0.approver': userId,
-        },
-        {
-          // Đơn của phòng ban mình (tương thích dữ liệu cũ / nhân viên chưa có directManager)
-          department: userDepartment,
-          status: { $in: ['pending_tp_approval', 'pending_approval', 'rejected_by_tp', 'procurement_pricing', 'procurement_execution', 'pending_accounting', 'pending_director_approval', 'pending_chairman_approval', 'completed', 'rejected'] },
-        },
-        {
-          // Đơn do chính trưởng phòng tạo
-          creator: userId,
-        },
-      ];
-    } else if (userRole === 'thu_mua') {
-      // [LUỒNG MỚI] Thu mua: xem các đề xuất cần khảo giá (procurement_pricing), cần mua sắm (procurement_execution), hoặc từng xử lý
-      query.$or = [
-        { currentApprovalRole: 'thu_mua' },
-        { status: { $in: ['procurement_pricing', 'procurement_execution', 'procurement_review', 'rejected_by_director', 'rejected_by_accounting'] } },
-        { 'approvalFlow.role': 'thu_mua', 'approvalFlow.status': { $in: ['approved', 'pending'] } },
-      ];
-    } else if (userRole === 'ke_toan') {
-      // [LUỒNG MỚI] Kế toán: nhận bản sao theo dõi khi Thu mua nộp báo giá cho GĐ/Chủ tịch, xử lý chứng từ khi Thu mua nộp hồ sơ
-      query.$or = [
-        { currentApprovalRole: 'ke_toan' },
-        { status: { $in: ['pending_director_approval', 'pending_chairman_approval', 'pending_accounting', 'accounting_review', 'pending_payment', 'pending_payment_approval', 'disbursing', 'completed', 'rejected_by_accounting'] } },
-        { 'approvalFlow.role': 'ke_toan', 'approvalFlow.status': { $in: ['approved', 'pending'] } },
-      ];
-    } else if (userRole === 'giam_doc') {
-      // [LUỒNG MỚI] Giám đốc xem các đề xuất thuộc thẩm quyền (ẩn các đơn > 10tr thuộc thẩm quyền Chủ tịch đang chờ duyệt)
-      query.status = {
-        $nin: ['pending_tp_approval', 'draft', 'rejected_by_tp', 'pending_chairman_approval'],
-      };
+    // Nếu người dùng có quyền Chủ tịch hoặc Admin: xem toàn bộ hồ sơ
+    if (userRoles.includes('chu_tich') || userRoles.includes('admin')) {
+      query = {};
+    } else {
+      // Tổng hợp các điều kiện lọc theo từng vai trò của người dùng
+      const orConditions = [];
+
+      // Bất kỳ người dùng nào được chỉ định làm người duyệt Bước 1 (directManager) đều luôn thấy đơn này để duyệt
+      orConditions.push({ 'approvalFlow.0.approver': userId });
+
+      // Người tạo luôn xem được đề xuất của chính mình (kể cả khi mang nhiều chức danh)
+      orConditions.push({ creator: userId });
+
+      if (userRoles.includes('truong_phong')) {
+        orConditions.push(
+          {
+            department: userDepartment,
+            status: { $in: ['pending_tp_approval', 'pending_approval', 'rejected_by_tp', 'procurement_pricing', 'procurement_execution', 'pending_accounting', 'pending_director_approval', 'pending_chairman_approval', 'completed', 'rejected'] },
+          },
+          { creator: userId }
+        );
+      }
+
+      if (userRoles.includes('thu_mua')) {
+        orConditions.push(
+          { currentApprovalRole: 'thu_mua' },
+          { status: { $in: ['procurement_pricing', 'procurement_execution', 'procurement_review', 'rejected_by_director', 'rejected_by_accounting'] } },
+          { 'approvalFlow.role': 'thu_mua', 'approvalFlow.status': { $in: ['approved', 'pending'] } }
+        );
+      }
+
+      if (userRoles.includes('ke_toan')) {
+        orConditions.push(
+          { currentApprovalRole: 'ke_toan' },
+          { status: { $in: ['pending_director_approval', 'pending_chairman_approval', 'pending_accounting', 'accounting_review', 'pending_payment', 'pending_payment_approval', 'disbursing', 'completed', 'rejected_by_accounting'] } },
+          { 'approvalFlow.role': 'ke_toan', 'approvalFlow.status': { $in: ['approved', 'pending'] } }
+        );
+      }
+
+      if (userRoles.includes('giam_doc')) {
+        orConditions.push({
+          status: {
+            $nin: ['pending_tp_approval', 'draft', 'rejected_by_tp', 'pending_chairman_approval'],
+          },
+        });
+      }
+
+      if (orConditions.length > 0) {
+        query.$or = orConditions;
+      } else {
+        query.creator = userId;
+      }
     }
-    // Chủ tịch có thể xem toàn bộ các đề xuất
 
     return await PurchaseProposal.find(query)
-      .populate('creator', 'fullName email role department bankAccount')
+      .populate('creator', 'fullName email role roles department bankAccount')
       .populate('department', 'name')
-      .populate('approvalFlow.approver', 'fullName role')
+      .populate('approvalFlow.approver', 'fullName role roles')
       .populate('disbursements.processedBy', 'fullName')
-      .populate('procurementExecution.submittedBy', 'fullName email role department bankAccount')
+      .populate('procurementExecution.submittedBy', 'fullName email role roles department bankAccount')
       .sort({ createdAt: -1 });
   }
 
   async getById(id) {
     const proposal = await PurchaseProposal.findById(id)
-      .populate('creator', 'fullName email role department bankAccount')
+      .populate('creator', 'fullName email role roles department bankAccount')
       .populate('department', 'name')
-      .populate('approvalFlow.approver', 'fullName role')
+      .populate('approvalFlow.approver', 'fullName role roles')
       .populate('disbursements.processedBy', 'fullName')
-      .populate('procurementExecution.submittedBy', 'fullName email role department bankAccount')
+      .populate('procurementExecution.submittedBy', 'fullName email role roles department bankAccount')
       .populate({
         path: 'procurementExecution.advanceProposalId',
         select: 'proposalCode status totalAmount currentApprovalRole approvalFlow',
@@ -181,6 +201,10 @@ class PurchaseProposalService {
     const approver = await User.findById(approverId);
     if (!approver) throw new Error('Người duyệt không tồn tại');
 
+    const approverRoles = (Array.isArray(approver.roles) && approver.roles.length > 0)
+      ? approver.roles
+      : [approver.role];
+
     // Tìm bước duyệt đang chờ xử lý hiện tại
     const currentStepIndex = proposal.approvalFlow.findIndex(
       step => step.status === 'pending'
@@ -193,18 +217,22 @@ class PurchaseProposalService {
     const currentStep = proposal.approvalFlow[currentStepIndex];
 
     // Xác thực người duyệt có đúng vai trò được cấp quyền hay không
-    // Đặc biệt: bước truong_phong có thể có approver cụ thể (directManager) được gán sẵn,
-    // trong trường hợp đó CHỈ người được gán đó mới có quyền duyệt.
     if (currentStep.role === 'truong_phong') {
       const assignedManager = currentStep.approver ? String(currentStep.approver) : null;
       if (assignedManager && assignedManager !== String(approverId)) {
         throw new Error('Bạn không phải trưởng phòng trực tiếp của nhân viên này. Không có quyền duyệt bước này.');
       }
-      if (!assignedManager && approver.role !== 'truong_phong') {
+      const canApproveTP = approverRoles.some(r => ['truong_phong', 'giam_doc', 'chu_tich'].includes(r));
+      if (!assignedManager && !canApproveTP) {
         throw new Error('Bạn không có quyền duyệt bước này (yêu cầu vai trò Trưởng phòng)');
       }
-    } else if (currentStep.role !== 'pending_determination' && currentStep.role !== approver.role) {
-      throw new Error('Bạn không có quyền duyệt bước này');
+    } else if (currentStep.role !== 'pending_determination') {
+      const hasPermission = approverRoles.includes(currentStep.role) ||
+        (currentStep.role === 'giam_doc' && approverRoles.includes('chu_tich')) ||
+        approverRoles.includes('admin');
+      if (!hasPermission) {
+        throw new Error('Bạn không có quyền duyệt bước này');
+      }
     }
 
     // Cập nhật trạng thái bước hiện tại
@@ -287,6 +315,10 @@ class PurchaseProposalService {
     const approver = await User.findById(approverId);
     if (!approver) throw new Error('Người duyệt không tồn tại');
 
+    const approverRoles = (Array.isArray(approver.roles) && approver.roles.length > 0)
+      ? approver.roles
+      : [approver.role];
+
     // Xác định khâu hiện tại và trả về khâu trước đó
     if (proposal.status === 'pending_tp_approval' || proposal.status === 'pending_approval') {
       // 1. Trưởng phòng trực tiếp từ chối -> Gửi về cho Nhân viên (người tạo đơn)
@@ -294,7 +326,8 @@ class PurchaseProposalService {
       if (tpStep) {
         // Kiểm tra: chỉ người được gán hoặc truong_phong chung mới được từ chối
         const assignedManager = tpStep.approver ? String(tpStep.approver) : null;
-        if (assignedManager && assignedManager !== String(approverId) && approver.role !== 'truong_phong') {
+        const canRejectTP = approverRoles.some(r => ['truong_phong', 'giam_doc', 'chu_tich'].includes(r));
+        if (assignedManager && assignedManager !== String(approverId) && !canRejectTP) {
           throw new Error('Bạn không phải trưởng phòng trực tiếp của nhân viên này.');
         }
         tpStep.status = 'rejected';
@@ -309,7 +342,7 @@ class PurchaseProposalService {
     } else if (proposal.status === 'pending_director_approval' || proposal.status === 'pending_chairman_approval' || proposal.status === 'pending_final_approval') {
       // 2. Giám đốc / Chủ tịch từ chối báo giá -> Gửi về cho Thu mua lập lại báo giá
       const isOverTenMillion = (proposal.totalActualAmount || 0) > 10000000;
-      if (isOverTenMillion && approver.role !== 'chu_tich') {
+      if (isOverTenMillion && !approverRoles.includes('chu_tich')) {
         throw new Error('Đơn mua sắm có tổng giá trị hàng hóa trên 10 triệu đồng thuộc thẩm quyền của Chủ tịch. Giám đốc không có quyền từ chối hoặc phê duyệt đơn này.');
       }
 
@@ -705,15 +738,16 @@ class PurchaseProposalService {
     if (!approver) throw new Error('Người duyệt không tồn tại');
 
     const isOverTenMillion = (proposal.totalActualAmount || 0) > 10000000;
+    const approverRolesList = approver.roles && approver.roles.length > 0 ? approver.roles : [approver.role];
 
     // QUY TẮC BẮT BUỘC:
     // Đơn có tổng tiền > 10.000.000 VNĐ: CHỈ Chủ tịch có quyền duyệt mua để làm hợp đồng, Giám đốc KHÔNG duyệt!
     if (isOverTenMillion) {
-      if (approver.role !== 'chu_tich') {
+      if (!approverRolesList.includes('chu_tich')) {
         throw new Error('Đơn mua sắm có tổng giá trị hàng hóa trên 10 triệu đồng (> 10.000.000 VNĐ). Theo quy định, quyền duyệt mua để làm hợp đồng do Chủ tịch thực hiện, Giám đốc không có quyền phê duyệt đơn này.');
       }
     } else {
-      if (approver.role !== 'giam_doc' && approver.role !== 'chu_tich') {
+      if (!approverRolesList.includes('giam_doc') && !approverRolesList.includes('chu_tich')) {
         throw new Error('Bạn không có quyền duyệt bước này (chỉ Giám đốc được duyệt đơn từ 10 triệu trở xuống)');
       }
     }

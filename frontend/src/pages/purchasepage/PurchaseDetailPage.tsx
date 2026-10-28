@@ -47,7 +47,7 @@ import {
 
 export const PurchaseDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   const [proposal, setProposal] = useState<PurchaseProposal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -796,7 +796,7 @@ export const PurchaseDetailPage: React.FC = () => {
     ? (typeof tpFlowStep.approver === 'object' ? (tpFlowStep.approver as any)._id : tpFlowStep.approver)
     : null;
   const isTpApprovalTurn =
-    user?.role === 'truong_phong' &&
+    (hasRole('truong_phong') || Boolean(assignedManagerId && String(assignedManagerId) === String(user?._id))) &&
     (proposal.status === 'pending_tp_approval' || proposal.status === 'pending_approval') &&
     // Nếu có chỉ định directManager → chỉ người được chỉ định đó mới được duyệt
     // Nếu chưa có chỉ định → mọi trưởng phòng trong phòng ban đều được duyệt (tương thích cũ)
@@ -804,7 +804,7 @@ export const PurchaseDetailPage: React.FC = () => {
 
   // Bước 2: Thu mua lập 3-4 báo giá + văn bản giải trình
   const isProcurementTurn =
-    user?.role === 'thu_mua' &&
+    hasRole('thu_mua') &&
     (proposal.status === 'procurement_pricing' || proposal.status === 'procurement_review' || proposal.status === 'rejected_by_director');
 
   // [LUỒNG MỚI] Tự động tổng hợp chi phí thực tế từ tất cả các vật tư
@@ -867,32 +867,32 @@ export const PurchaseDetailPage: React.FC = () => {
   // Đơn <= 10 triệu: Giám đốc (hoặc Chủ tịch) duyệt
   const isDirectorApprovalTurn =
     isPendingPricingApproval &&
-    ((isOverTenMillion && user?.role === 'chu_tich') ||
-      (!isOverTenMillion && (user?.role === 'giam_doc' || user?.role === 'chu_tich')));
+    ((isOverTenMillion && hasRole('chu_tich')) ||
+      (!isOverTenMillion && hasRole('giam_doc', 'chu_tich')));
 
   // Cảnh báo khi Giám đốc đang xem đơn > 10 triệu (thuộc thẩm quyền Chủ tịch duyệt mua)
   const isDirectorWatchingOverLimit =
-    isPendingPricingApproval && isOverTenMillion && user?.role === 'giam_doc';
+    isPendingPricingApproval && isOverTenMillion && hasRole('giam_doc') && !hasRole('chu_tich');
 
   // Kế toán nhận bản sao theo dõi khi Lãnh đạo đang xem báo giá
   const isAccountantWatching =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     isPendingPricingApproval;
 
   // Bước 4: Thu mua thực hiện mua sắm (chọn: ứng trước, hóa đơn, hoặc hợp đồng)
   const isProcurementExecutionTurn =
-    user?.role === 'thu_mua' &&
+    hasRole('thu_mua') &&
     (proposal.status === 'procurement_execution' || proposal.status === 'rejected_by_accounting');
 
   // Bước 5: Kế toán xử lý chứng từ thanh toán / giải ngân
   const isAccountingProcessTurn =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     (proposal.status === 'pending_accounting' || proposal.status === 'accounting_review');
 
   // [LUỒNG MỚI] Chỉ Kế toán có nghiệp vụ lập đề xuất thanh toán khi đơn ở khâu kế toán xử lý (pending_accounting)
   // Thu mua chỉ có chức năng Thực hiện mua sắm, KHÔNG có chức năng đề xuất thanh toán và nghiệp vụ thanh toán
   const canCreatePayment =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     ['pending_accounting', 'accounting_review', 'procurement_execution', 'pending_payment', 'pending_payment_approval', 'disbursing', 'final_approved'].includes(proposal.status) &&
     remainingDisbursement > 0;
   const isDisbursingTurn = canCreatePayment;
@@ -904,9 +904,9 @@ export const PurchaseDetailPage: React.FC = () => {
 
   const canUserApprovePayment = (pay: PaymentProposal) => {
     const isPayOver10M = (pay.amount || 0) > 10000000;
-    if (pay.status === 'pending_chairman') return user?.role === 'chu_tich';
+    if (pay.status === 'pending_chairman') return hasRole('chu_tich');
     if (pay.status === 'pending_director') {
-      return isPayOver10M ? user?.role === 'chu_tich' : (user?.role === 'giam_doc' || user?.role === 'chu_tich');
+      return isPayOver10M ? hasRole('chu_tich') : hasRole('giam_doc', 'chu_tich');
     }
     return false;
   };
@@ -917,7 +917,7 @@ export const PurchaseDetailPage: React.FC = () => {
   // [TINH GỌN GIAO DIỆN] Phân quyền xem các chi tiết thủ tục tiền tệ (Thanh toán, giải ngân, mã UNC ngân hàng)
   // Chỉ Kế toán, Giám đốc, Chủ tịch và Quản trị viên mới xem các bảng tiền bạc rườm rà này
   const canViewFinancialDetails = Boolean(
-    user && ['ke_toan', 'giam_doc', 'chu_tich', 'admin'].includes(user.role)
+    user && hasRole('ke_toan', 'giam_doc', 'chu_tich', 'admin')
   );
 
   return (
@@ -1026,7 +1026,7 @@ export const PurchaseDetailPage: React.FC = () => {
           )}
 
           {/* [QUY TRÌNH MỚI] Kế toán tiếp nhận hóa đơn / xử lý khi đơn ở pending_accounting */}
-          {user?.role === 'ke_toan' &&
+          {hasRole('ke_toan') &&
             ['pending_accounting', 'accounting_review'].includes(proposal.status) &&
             !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
               <>
@@ -1765,7 +1765,7 @@ export const PurchaseDetailPage: React.FC = () => {
           {proposal.procurementExecution?.actionType && (
             <div className="card" style={{ borderLeft: '4px solid var(--accent-cyan)' }}>
               {/* [QUY TRÌNH MỚI]: Kế toán tiếp nhận hóa đơn & lập đề xuất thanh toán */}
-              {user?.role === 'ke_toan' && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
+              {hasRole('ke_toan') && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
                 <div
                   style={{
                     padding: '0.85rem 1rem',
@@ -1798,7 +1798,7 @@ export const PurchaseDetailPage: React.FC = () => {
               )}
 
               {/* Thông báo tiến độ cho Thu mua: Thu mua đã hoàn thành khâu thực hiện mua sắm, hồ sơ đã chuyển sang Kế toán */}
-              {user?.role === 'thu_mua' && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
+              {hasRole('thu_mua') && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
                 <div
                   style={{
                     padding: '0.75rem 1rem',

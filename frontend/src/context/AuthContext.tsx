@@ -10,6 +10,7 @@ interface AuthContextType {
   logout: () => void;
   updateUser: (updatedUser: User) => void;
   refreshProfile: () => Promise<void>;
+  hasRole: (...roles: string[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -59,6 +60,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  // Kiểm tra người dùng có BẤT KỲ vai trò nào trong danh sách (hỗ trợ đa vai trò)
+  const hasRole = useCallback((...roles: string[]) => {
+    if (!user) return false;
+    const userRoles: string[] = (user.roles && user.roles.length > 0) ? user.roles : [user.role];
+    return roles.some((r) => userRoles.includes(r));
+  }, [user]);
+
   // Khởi tạo và xác thực phiên đăng nhập
   useEffect(() => {
     const initAuth = async () => {
@@ -87,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         logout,
         updateUser,
         refreshProfile,
+        hasRole,
       }}
     >
       {children}

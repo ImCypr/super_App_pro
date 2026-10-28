@@ -48,7 +48,7 @@ const getFileIcon = (fileName: string, type?: string) => {
 
 export const AdvanceDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   const [proposal, setProposal] = useState<AdvanceProposal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -547,7 +547,7 @@ export const AdvanceDetailPage: React.FC = () => {
   const isDirectorWatchingOverLimit =
     (proposal.status === 'pending_chairman' || proposal.status === 'pending_director') &&
     isOverTenMillion &&
-    user?.role === 'giam_doc';
+    hasRole('giam_doc') && !hasRole('chu_tich');
 
   // Điều kiện lãnh đạo được bấm nút duyệt/từ chối theo phân quyền 10 triệu
   const canUserApproveAdvance = () => {
@@ -556,10 +556,10 @@ export const AdvanceDetailPage: React.FC = () => {
     }
     if (isOverTenMillion) {
       // Đơn > 10 triệu: Chỉ Chủ tịch được duyệt
-      return user?.role === 'chu_tich';
+      return hasRole('chu_tich');
     }
     // Đơn <= 10 triệu: Sếp (Giám đốc) duyệt, Chủ tịch cũng có thể duyệt
-    return user?.role === 'giam_doc' || user?.role === 'chu_tich';
+    return hasRole('giam_doc', 'chu_tich');
   };
 
   // [QUY TRÌNH MỚI] Kiểm tra trạng thái bị từ chối
@@ -575,10 +575,10 @@ export const AdvanceDetailPage: React.FC = () => {
   // Người tạo (hoặc lãnh đạo) có quyền chỉnh sửa & nộp lại đơn khi bị từ chối
   const isCreatorTurnToResubmit =
     isProposalRejected &&
-    (proposal.creator?._id === user?._id || user?.role === 'truong_phong' || user?.role === 'chu_tich');
+    (proposal.creator?._id === user?._id || hasRole('truong_phong', 'chu_tich'));
 
   const isAccountingDisburseTurn =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     proposal.status === 'pending_accounting';
 
   const isCreatorSettlementTurn =
@@ -586,19 +586,19 @@ export const AdvanceDetailPage: React.FC = () => {
     proposal.creator?._id === user?._id;
 
   const isAccountingSettlementConfirmTurn =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     proposal.status === 'settlement_submitted';
 
   // [QUY TRÌNH MỚI] Kế toán lập đề xuất hoàn tạm ứng khi tạm ứng > hóa đơn
   const isAccountingRequestSettlementTurn =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     isAdvanceDiffSurplus &&
     proposal.status !== 'completed' &&
     proposal.status !== 'settlement_submitted';
 
   // [QUY TRÌNH MỚI] Kế toán xác nhận hoàn thành khi vừa đủ
   const isAccountingExactConfirmTurn =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     isAdvanceDiffExact &&
     proposal.status !== 'completed' &&
     proposal.status !== 'draft';
@@ -685,7 +685,7 @@ export const AdvanceDetailPage: React.FC = () => {
           )}
 
           {/* [QUY TRÌNH MỚI] Kế toán kiểm tra 3 thông tin và chỉ cần bấm Xác Nhận Hoàn Thành hoặc Từ Chối */}
-          {user?.role === 'ke_toan' &&
+          {hasRole('ke_toan') &&
             proposal.status !== 'completed' &&
             ['settlement_submitted', 'disbursed', 'pending_settlement'].includes(proposal.status) &&
             actualInvAmount > 0 && (

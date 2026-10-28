@@ -73,10 +73,11 @@ export const adminService = {
   },
 
   /**
-   * Admin gán hoặc thay đổi chức danh nghiệp vụ duy nhất
+   * Admin gán hoặc thay đổi chức danh nghiệp vụ (đơn hoặc đa vai trò)
    */
-  updateUserRole: async (id: string, role: Role): Promise<User> => {
-    const res = await api.put<{ success: boolean; message: string; data: User }>(`/admin/users/${id}/role`, { role });
+  updateUserRole: async (id: string, roleOrRoles: Role | Role[]): Promise<User> => {
+    const payload = Array.isArray(roleOrRoles) ? { roles: roleOrRoles } : { role: roleOrRoles };
+    const res = await api.put<{ success: boolean; message: string; data: User }>(`/admin/users/${id}/role`, payload);
     return res.data.data;
   },
 

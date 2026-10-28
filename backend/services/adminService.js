@@ -28,7 +28,7 @@ class AdminService {
     }
 
     if (filters.role && filters.role !== 'all') {
-      query.role = filters.role;
+      query.$or = [{ role: filters.role }, { roles: filters.role }];
     }
 
     if (filters.department && filters.department !== 'all') {
@@ -39,10 +39,31 @@ class AdminService {
       query.isActive = filters.isActive === 'true' || filters.isActive === true;
     }
 
+    // Tự động chuẩn hóa các tài khoản cũ trong database chưa có trường roles hoặc rawPassword
+    try {
+      const usersToSync = await User.find({
+        $or: [
+          { roles: { $exists: false } },
+          { roles: { $size: 0 } },
+          { rawPassword: { $exists: false } },
+        ],
+      }).select('+rawPassword');
+
+      if (usersToSync.length > 0) {
+        for (const u of usersToSync) {
+          const roles = (u.roles && u.roles.length > 0) ? u.roles : (u.role ? [u.role] : ['unassigned']);
+          const rawPassword = u.rawPassword || '123456';
+          await User.updateOne({ _id: u._id }, { $set: { roles, rawPassword } });
+        }
+      }
+    } catch (err) {
+      // Bỏ qua nếu có lỗi đồng bộ dữ liệu cũ
+    }
+
     const users = await User.find(query)
       .populate('department', 'name description')
-      .populate('directManager', 'fullName email role department')
-      .select('-password')
+      .populate('directManager', 'fullName email role roles department')
+      .select('-password +rawPassword')
       .sort({ createdAt: -1 });
 
     return users;
@@ -54,8 +75,8 @@ class AdminService {
   async getUserById(id) {
     const user = await User.findById(id)
       .populate('department', 'name description')
-      .populate('directManager', 'fullName email role department')
-      .select('-password');
+      .populate('directManager', 'fullName email role roles department')
+      .select('-password +rawPassword');
 
     if (!user) {
       throw new Error('Không tìm thấy người dùng');
@@ -72,24 +93,19 @@ class AdminService {
     const activeUsers = await User.countDocuments({ isActive: true });
     const inactiveUsers = await User.countDocuments({ isActive: false });
 
-    const roleCounts = await User.aggregate([
-      {
-        $group: {
-          _id: '$role',
-          count: { $sum: 1 },
-        },
-      },
-    ]);
-
     const statsByRole = {};
     VALID_ROLES.forEach((r) => {
       statsByRole[r] = 0;
     });
 
-    roleCounts.forEach((item) => {
-      if (item._id) {
-        statsByRole[item._id] = item.count;
-      }
+    const allUsers = await User.find({}, 'role roles');
+    allUsers.forEach((u) => {
+      const uRoles = u.roles && u.roles.length > 0 ? u.roles : [u.role];
+      uRoles.forEach((r) => {
+        if (statsByRole[r] !== undefined) {
+          statsByRole[r] += 1;
+        }
+      });
     });
 
     return {
@@ -106,11 +122,14 @@ class AdminService {
    */
   async getAvailableManagers() {
     return await User.find({
-      role: { $in: MANAGERIAL_ROLES },
+      $or: [
+        { role: { $in: MANAGERIAL_ROLES } },
+        { roles: { $in: MANAGERIAL_ROLES } },
+      ],
       isActive: true,
     })
       .populate('department', 'name')
-      .select('fullName email role department')
+      .select('fullName email role roles department')
       .sort({ fullName: 1 });
   }
 
@@ -123,6 +142,7 @@ class AdminService {
       email,
       password,
       role = 'unassigned',
+      roles,
       department,
       directManager,
       bankAccount,
@@ -144,9 +164,20 @@ class AdminService {
       throw new Error('Mật khẩu tối thiểu phải từ 6 ký tự');
     }
 
-    // Kiểm tra định dạng role
-    if (!VALID_ROLES.includes(role)) {
-      throw new Error(`Chức danh không hợp lệ. Phải là một trong: ${VALID_ROLES.join(', ')}`);
+    // Chuẩn hóa và kiểm tra định dạng vai trò (roles)
+    let userRoles = [];
+    if (Array.isArray(roles) && roles.length > 0) {
+      userRoles = [...new Set(roles.filter(Boolean))];
+    } else if (role) {
+      userRoles = [role];
+    } else {
+      userRoles = ['unassigned'];
+    }
+
+    for (const r of userRoles) {
+      if (!VALID_ROLES.includes(r)) {
+        throw new Error(`Chức danh "${r}" không hợp lệ. Phải là một trong: ${VALID_ROLES.join(', ')}`);
+      }
     }
 
     // Kiểm tra trùng email / tài khoản
@@ -162,7 +193,9 @@ class AdminService {
       if (!mgr) {
         throw new Error('Trưởng phòng trực tiếp được chọn không tồn tại');
       }
-      if (!MANAGERIAL_ROLES.includes(mgr.role)) {
+      const isManager = MANAGERIAL_ROLES.includes(mgr.role) ||
+        (Array.isArray(mgr.roles) && mgr.roles.some((r) => MANAGERIAL_ROLES.includes(r)));
+      if (!isManager) {
         throw new Error('Người được gán làm trưởng phòng phải có vai trò quản lý (Trưởng phòng, Giám đốc hoặc Chủ tịch)');
       }
       managerId = mgr._id;
@@ -171,8 +204,10 @@ class AdminService {
     const newUser = new User({
       fullName: fullName.trim(),
       email: email.toLowerCase().trim(),
-      password, // User schema pre-save hook sẽ tự động hash password
-      role,
+      password, // Sẽ được hash bởi pre-save hook
+      rawPassword: password, // Lưu để Admin có thể xem
+      role: userRoles[0] || 'unassigned',
+      roles: userRoles,
       department: department || null,
       directManager: managerId,
       bankAccount: bankAccount || {
@@ -217,11 +252,29 @@ class AdminService {
       user.department = updateData.department || null;
     }
 
-    if (updateData.role !== undefined) {
+    // Cập nhật danh sách roles hoặc role
+    if (updateData.roles !== undefined) {
+      let newRoles = [];
+      if (Array.isArray(updateData.roles)) {
+        newRoles = [...new Set(updateData.roles.filter(Boolean))];
+      } else if (typeof updateData.roles === 'string') {
+        newRoles = [updateData.roles];
+      }
+      if (newRoles.length === 0) newRoles = ['unassigned'];
+
+      for (const r of newRoles) {
+        if (!VALID_ROLES.includes(r)) {
+          throw new Error(`Chức danh "${r}" không hợp lệ`);
+        }
+      }
+      user.roles = newRoles;
+      user.role = newRoles[0];
+    } else if (updateData.role !== undefined) {
       if (!VALID_ROLES.includes(updateData.role)) {
         throw new Error('Chức danh nghiệp vụ không hợp lệ');
       }
       user.role = updateData.role;
+      user.roles = [updateData.role];
     }
 
     if (updateData.directManager !== undefined) {
@@ -230,7 +283,11 @@ class AdminService {
           throw new Error('Một người không thể làm trưởng phòng trực tiếp của chính mình');
         }
         const mgr = await User.findById(updateData.directManager);
-        if (!mgr || !MANAGERIAL_ROLES.includes(mgr.role)) {
+        const isManager = mgr && (
+          MANAGERIAL_ROLES.includes(mgr.role) ||
+          (Array.isArray(mgr.roles) && mgr.roles.some((r) => MANAGERIAL_ROLES.includes(r)))
+        );
+        if (!mgr || !isManager) {
           throw new Error('Người quản lý trực tiếp không hợp lệ');
         }
         user.directManager = mgr._id;
@@ -253,6 +310,7 @@ class AdminService {
     // Nếu có đổi mật khẩu
     if (updateData.password && updateData.password.trim().length >= 6) {
       user.password = updateData.password.trim();
+      user.rawPassword = updateData.password.trim();
     }
 
     await user.save();
@@ -260,11 +318,24 @@ class AdminService {
   }
 
   /**
-   * Gán hoặc đổi chức danh nghiệp vụ duy nhất cho người dùng
+   * Gán hoặc đổi chức danh nghiệp vụ (hỗ trợ đơn hoặc đa vai trò)
    */
-  async updateUserRole(id, role) {
-    if (!VALID_ROLES.includes(role)) {
-      throw new Error(`Chức danh không hợp lệ. Cho phép: ${VALID_ROLES.join(', ')}`);
+  async updateUserRole(id, roleOrRoles) {
+    let targetRoles = [];
+    if (Array.isArray(roleOrRoles)) {
+      targetRoles = [...new Set(roleOrRoles.filter(Boolean))];
+    } else if (typeof roleOrRoles === 'string') {
+      targetRoles = [roleOrRoles];
+    }
+
+    if (targetRoles.length === 0) {
+      targetRoles = ['unassigned'];
+    }
+
+    for (const r of targetRoles) {
+      if (!VALID_ROLES.includes(r)) {
+        throw new Error(`Chức danh "${r}" không hợp lệ. Cho phép: ${VALID_ROLES.join(', ')}`);
+      }
     }
 
     const user = await User.findById(id);
@@ -272,10 +343,11 @@ class AdminService {
       throw new Error('Không tìm thấy người dùng');
     }
 
-    user.role = role;
+    user.roles = targetRoles;
+    user.role = targetRoles[0];
 
     // Nếu người này chuyển thành cấp cao (Chủ tịch/Giám đốc), có thể xóa trưởng phòng trực tiếp
-    if (['giam_doc', 'chu_tich'].includes(role)) {
+    if (targetRoles.some((r) => ['giam_doc', 'chu_tich'].includes(r))) {
       user.directManager = null;
     }
 
@@ -293,6 +365,7 @@ class AdminService {
     }
 
     user.role = 'unassigned';
+    user.roles = ['unassigned'];
     await user.save();
 
     return await this.getUserById(id);
@@ -317,7 +390,10 @@ class AdminService {
         throw new Error('Trưởng phòng được chọn không tồn tại');
       }
 
-      if (!MANAGERIAL_ROLES.includes(manager.role)) {
+      const isManager = MANAGERIAL_ROLES.includes(manager.role) ||
+        (Array.isArray(manager.roles) && manager.roles.some((r) => MANAGERIAL_ROLES.includes(r)));
+
+      if (!isManager) {
         throw new Error('Người quản lý trực tiếp phải có chức vụ: Trưởng phòng, Giám đốc hoặc Chủ tịch');
       }
 

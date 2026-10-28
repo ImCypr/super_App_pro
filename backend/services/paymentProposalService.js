@@ -222,30 +222,45 @@ class PaymentProposalService {
       filter.status = query.status;
     }
 
-    // Phân quyền theo vai trò
-    if (user.role === 'nhan_vien') {
-      // Nhân viên chỉ xem đơn thanh toán liên quan đến đề xuất mình tạo
-      const myPurchases = await PurchaseProposal.find({ creator: user._id }).select('_id');
-      filter.purchaseProposal = { $in: myPurchases.map((p) => p._id) };
-    } else if (user.role === 'truong_phong') {
-      // Trưởng phòng xem đơn thanh toán của phòng ban mình
-      filter.department = user.department;
-    } else if (user.role === 'thu_mua') {
-      // Thu mua không có nghiệp vụ thanh toán, chỉ theo dõi các đơn thanh toán liên quan đến đề xuất mua sắm do mình phụ trách
-      const myPurchases = await PurchaseProposal.find({ 'procurementExecution.submittedBy': user._id }).select('_id');
-      filter.purchaseProposal = { $in: myPurchases.map((p) => p._id) };
+    // Phân quyền theo vai trò (hỗ trợ đa vai trò)
+    const userRoles = (Array.isArray(user.roles) && user.roles.length > 0)
+      ? user.roles
+      : [user.role];
+
+    const hasFullAccess = userRoles.some((r) => ['ke_toan', 'giam_doc', 'chu_tich', 'admin'].includes(r));
+
+    if (!hasFullAccess) {
+      const orConditions = [];
+
+      if (userRoles.includes('nhan_vien')) {
+        const myPurchases = await PurchaseProposal.find({ creator: user._id }).select('_id');
+        orConditions.push({ purchaseProposal: { $in: myPurchases.map((p) => p._id) } });
+      }
+
+      if (userRoles.includes('truong_phong')) {
+        orConditions.push({ department: user.department });
+      }
+
+      if (userRoles.includes('thu_mua')) {
+        const myPurchases = await PurchaseProposal.find({ 'procurementExecution.submittedBy': user._id }).select('_id');
+        orConditions.push({ purchaseProposal: { $in: myPurchases.map((p) => p._id) } });
+      }
+
+      if (orConditions.length > 0) {
+        filter.$or = orConditions;
+      }
     }
     // Kế toán, Giám đốc, Chủ tịch có quyền xem toàn bộ đơn thanh toán
 
     return await PaymentProposal.find(filter)
-      .populate('creator', 'fullName email role')
+      .populate('creator', 'fullName email role roles')
       .populate('department', 'name')
       .populate({
         path: 'purchaseProposal',
         select: 'proposalCode totalEstimatedAmount totalActualAmount totalDisbursed status',
       })
-      .populate('approvalFlow.approver', 'fullName role')
-      .populate('disbursementInfo.disbursedBy', 'fullName role')
+      .populate('approvalFlow.approver', 'fullName role roles')
+      .populate('disbursementInfo.disbursedBy', 'fullName role roles')
       .sort({ createdAt: -1 });
   }
 
@@ -254,17 +269,17 @@ class PaymentProposalService {
    */
   async getById(id) {
     const proposal = await PaymentProposal.findById(id)
-      .populate('creator', 'fullName email role')
+      .populate('creator', 'fullName email role roles')
       .populate('department', 'name')
       .populate({
         path: 'purchaseProposal',
         populate: [
-          { path: 'creator', select: 'fullName email' },
+          { path: 'creator', select: 'fullName email role roles' },
           { path: 'department', select: 'name' },
         ],
       })
-      .populate('approvalFlow.approver', 'fullName role')
-      .populate('disbursementInfo.disbursedBy', 'fullName role');
+      .populate('approvalFlow.approver', 'fullName role roles')
+      .populate('disbursementInfo.disbursedBy', 'fullName role roles');
 
     if (!proposal) {
       throw new Error('Đề xuất thanh toán không tồn tại');
@@ -277,19 +292,25 @@ class PaymentProposalService {
    * Giám đốc hoặc Chủ tịch phê duyệt chi đề xuất thanh toán
    * Sau khi duyệt thành công, đơn chuyển về Kế toán để thực hiện giải ngân
    */
-  async approve(id, approverId, approverRole, comment = '') {
+  async approve(id, approverId, approverRoleOrRoles, comment = '') {
     const proposal = await PaymentProposal.findById(id);
     if (!proposal) {
       throw new Error('Đề xuất thanh toán không tồn tại');
     }
 
+    const approverRoles = Array.isArray(approverRoleOrRoles)
+      ? approverRoleOrRoles
+      : (approverRoleOrRoles ? [approverRoleOrRoles] : []);
+
     // Xác thực quyền phê duyệt
     if (proposal.status === 'pending_director') {
-      if (approverRole !== 'giam_doc' && approverRole !== 'chu_tich') {
+      const canApprove = approverRoles.some((r) => ['giam_doc', 'chu_tich', 'admin'].includes(r));
+      if (!canApprove) {
         throw new Error('Bạn không có quyền duyệt đề xuất này (cần Giám đốc phê duyệt)');
       }
     } else if (proposal.status === 'pending_chairman') {
-      if (approverRole !== 'chu_tich') {
+      const canApprove = approverRoles.some((r) => ['chu_tich', 'admin'].includes(r));
+      if (!canApprove) {
         throw new Error('Bạn không có quyền duyệt đề xuất này (cần Chủ tịch phê duyệt)');
       }
     } else {
@@ -325,7 +346,7 @@ class PaymentProposalService {
   /**
    * Từ chối đề xuất thanh toán
    */
-  async reject(id, rejecterId, rejecterRole, reason = '') {
+  async reject(id, rejecterId, rejecterRoleOrRoles, reason = '') {
     const proposal = await PaymentProposal.findById(id);
     if (!proposal) {
       throw new Error('Đề xuất thanh toán không tồn tại');
@@ -333,6 +354,14 @@ class PaymentProposalService {
 
     if (!['pending_director', 'pending_chairman', 'pending_disbursement'].includes(proposal.status)) {
       throw new Error('Đề xuất không thể từ chối ở trạng thái hiện tại');
+    }
+
+    const rejecterRoles = Array.isArray(rejecterRoleOrRoles)
+      ? rejecterRoleOrRoles
+      : (rejecterRoleOrRoles ? [rejecterRoleOrRoles] : []);
+
+    if (proposal.status === 'pending_chairman' && !rejecterRoles.some((r) => ['chu_tich', 'admin'].includes(r))) {
+      throw new Error('Đề xuất này thuộc thẩm quyền Chủ tịch xem xét');
     }
 
     // Cập nhật bước hiện tại thành rejected

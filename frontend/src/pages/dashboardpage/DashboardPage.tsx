@@ -21,7 +21,7 @@ import {
 
 
 export const DashboardPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const [purchaseProposals, setPurchaseProposals] = useState<PurchaseProposal[]>([]);
   const [advanceProposals, setAdvanceProposals] = useState<AdvanceProposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,19 +60,20 @@ export const DashboardPage: React.FC = () => {
     advanceProposals.reduce((sum, a) => sum + (a.totalDisbursed || 0), 0);
 
   // Đề xuất đang chờ xử lý theo vai trò của người dùng hiện tại
+  const myRoles: string[] = user ? ((user.roles && user.roles.length > 0) ? user.roles : [user.role]) : [];
   const pendingMyPurchases = purchaseProposals.filter(
-    (p) => p.currentApprovalRole === user?.role
+    (p) => myRoles.includes(p.currentApprovalRole as string)
   );
   const pendingMyAdvances = advanceProposals.filter((a) => {
     const totalAmount = a.totalAmount || 0;
     const isOverTenMillion = totalAmount > 10000000;
-    if (user?.role === 'giam_doc') {
-      return a.currentApprovalRole === 'giam_doc' && !isOverTenMillion;
+    if (hasRole('chu_tich') && (a.currentApprovalRole === 'chu_tich' || (a.currentApprovalRole === 'giam_doc' && isOverTenMillion))) {
+      return true;
     }
-    if (user?.role === 'chu_tich') {
-      return a.currentApprovalRole === 'chu_tich' || (a.currentApprovalRole === 'giam_doc' && isOverTenMillion);
+    if (hasRole('giam_doc') && a.currentApprovalRole === 'giam_doc' && !isOverTenMillion) {
+      return true;
     }
-    return a.currentApprovalRole === user?.role;
+    return myRoles.includes(a.currentApprovalRole as string) && !['giam_doc', 'chu_tich'].includes(a.currentApprovalRole as string);
   });
   const totalPendingMyAction = pendingMyPurchases.length + pendingMyAdvances.length;
 
