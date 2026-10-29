@@ -34,7 +34,7 @@ interface PurchaseFormItem {
 
 export const CreatePurchasePage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const defaultDepartment = (user?.department && typeof user.department === 'object' && 'name' in user.department)
     ? (user.department as any).name
     : '';
@@ -454,7 +454,7 @@ export const CreatePurchasePage: React.FC = () => {
                 {items.length} <span style={{ fontSize: '1rem', fontWeight: 500, color: 'var(--text-secondary)' }}>hạng mục</span>
               </div>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.4rem', lineHeight: 1.4 }}>
-                {['truong_phong', 'giam_doc', 'chu_tich'].includes(user?.role || '')
+                {hasRole('truong_phong', 'giam_doc', 'chu_tich')
                   ? '⚡ Với vai trò quản lý, đơn của bạn sẽ được chuyển thẳng tới Thu mua để lập báo giá (bỏ qua bước Trưởng phòng duyệt).'
                   : `ℹ️ Đơn sẽ được gửi đến Trưởng phòng trực tiếp${user?.directManager && typeof user.directManager === 'object' ? ` (${(user.directManager as any).fullName})` : ''} để duyệt. Sau đó Thu mua sẽ khảo sát 3-4 báo giá và trình Giám đốc.`
                 }
@@ -472,7 +472,7 @@ export const CreatePurchasePage: React.FC = () => {
                 style={{ padding: '0.75rem 1.5rem' }}
               >
                 <Save size={16} />
-                <span>{submitting ? 'Đang gửi...' : (['truong_phong', 'giam_doc', 'chu_tich'].includes(user?.role || '') ? 'Gửi Yêu Cầu Lên Thu Mua' : 'Gửi Yêu Cầu Lên Trưởng Phòng Duyệt')}</span>
+                <span>{submitting ? 'Đang gửi...' : (hasRole('truong_phong', 'giam_doc', 'chu_tich') ? 'Gửi Yêu Cầu Lên Thu Mua' : 'Gửi Yêu Cầu Lên Trưởng Phòng Duyệt')}</span>
               </button>
             </div>
           </div>

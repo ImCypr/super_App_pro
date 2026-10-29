@@ -17,6 +17,7 @@ class AuthService {
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        roles: user.roles && user.roles.length > 0 ? user.roles : [user.role],
         department: user.department,
         bankAccount: user.bankAccount,
       },
@@ -38,12 +39,41 @@ class AuthService {
         fullName: user.fullName,
         email: user.email,
         role: user.role,
+        roles: user.roles && user.roles.length > 0 ? user.roles : [user.role],
         department: user.department,
         bankAccount: user.bankAccount,
         avatar: user.avatar,
       },
       token,
     };
+  }
+
+  async changePassword(userId, currentPassword, newPassword) {
+    if (!currentPassword) {
+      throw new Error('Vui lòng nhập mật khẩu hiện tại');
+    }
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('Mật khẩu mới phải từ 6 ký tự trở lên');
+    }
+    if (newPassword.length > 50) {
+      throw new Error('Mật khẩu mới không được vượt quá 50 ký tự');
+    }
+
+    const user = await User.findById(userId).select('+password');
+    if (!user) {
+      throw new Error('Người dùng không tồn tại');
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      throw new Error('Mật khẩu hiện tại không chính xác');
+    }
+
+    user.password = newPassword;
+    user.rawPassword = newPassword;
+    await user.save();
+
+    return { message: 'Đổi mật khẩu thành công' };
   }
 
   async getProfile(userId) {

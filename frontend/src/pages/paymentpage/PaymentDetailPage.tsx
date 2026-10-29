@@ -32,7 +32,7 @@ import {
 
 export const PaymentDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   const [proposal, setProposal] = useState<PaymentProposal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -217,9 +217,9 @@ export const PaymentDetailPage: React.FC = () => {
   const isLeaderPending = proposal.status === 'pending_director' || proposal.status === 'pending_chairman';
   const canApprove =
     isLeaderPending &&
-    ((isOverTenMillion && user?.role === 'chu_tich') ||
-     (!isOverTenMillion && (user?.role === 'giam_doc' || user?.role === 'chu_tich')));
-  const canDisburse = proposal.status === 'pending_disbursement' && user?.role === 'ke_toan';
+    ((isOverTenMillion && hasRole('chu_tich')) ||
+     (!isOverTenMillion && hasRole('giam_doc', 'chu_tich')));
+  const canDisburse = proposal.status === 'pending_disbursement' && hasRole('ke_toan');
   const isDisburseTurn = canDisburse;
 
   const purchaseProposal = typeof proposal.purchaseProposal === 'object' ? proposal.purchaseProposal : null;
@@ -294,7 +294,7 @@ export const PaymentDetailPage: React.FC = () => {
               onClick={() => {
                 setDisburseData({
                   transactionCode: '',
-                  note: `Duyệt chi cho đơn ${proposal.proposalCode}`,
+                  note: `Giải ngân cho đơn ${proposal.proposalCode}`,
                   receiptAttachment: null,
                 });
                 setIsDisburseOpen(true);
@@ -302,7 +302,7 @@ export const PaymentDetailPage: React.FC = () => {
               className="btn btn-primary"
             >
               <DollarSign size={16} />
-              <span>Kế Toán Duyệt Chi (Chi Tiền)</span>
+              <span>Giải Ngân</span>
             </button>
           )}
 
@@ -339,7 +339,7 @@ export const PaymentDetailPage: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <CheckCircle2 size={20} color="var(--accent-cyan)" />
             <span style={{ fontSize: '0.875rem' }}>
-              <strong>Lãnh đạo đã xác nhận giải ngân:</strong> Đề xuất thanh toán đã được duyệt và đưa về cho Kế toán để thực hiện duyệt chi (chi trả cho bên Thu mua / đối tác thực hiện hợp đồng).
+              <strong>Lãnh đạo đã duyệt.</strong> Chờ Kế toán giải ngân.
             </span>
           </div>
           {isDisburseTurn && (
@@ -347,7 +347,7 @@ export const PaymentDetailPage: React.FC = () => {
               onClick={() => {
                 setDisburseData({
                   transactionCode: '',
-                  note: `Duyệt chi thanh toán theo đề xuất ${proposal.proposalCode}`,
+                  note: `Giải ngân theo đề xuất ${proposal.proposalCode}`,
                   receiptAttachment: null,
                 });
                 setIsDisburseOpen(true);
@@ -356,7 +356,7 @@ export const PaymentDetailPage: React.FC = () => {
               style={{ gap: '0.4rem' }}
             >
               <DollarSign size={14} />
-              <span>Duyệt Chi Ngay</span>
+              <span>Giải Ngân</span>
             </button>
           )}
         </div>
@@ -381,7 +381,7 @@ export const PaymentDetailPage: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
             <CheckCircle2 size={22} color="var(--success)" />
             <span style={{ fontSize: '0.875rem' }}>
-              <strong>Đã thanh toán hoàn tất:</strong> Kế toán đã thanh toán chi tiền hợp đồng/hóa đơn cho Thu mua thành công. Hóa đơn này đã được lưu trữ trong danh mục <strong>Hóa Đơn Đã Hoàn Thành</strong>.
+              <strong>Đã giải ngân hoàn tất.</strong>
             </span>
           </div>
           {purchaseProposal && (
@@ -391,7 +391,7 @@ export const PaymentDetailPage: React.FC = () => {
               style={{ gap: '0.35rem' }}
             >
               <ExternalLink size={14} />
-              <span>Xem Đơn Mua Sắm & Hóa Đơn Lưu Trữ</span>
+              <span>Xem Đơn Mua Sắm</span>
             </Link>
           )}
         </div>
@@ -1140,7 +1140,7 @@ export const PaymentDetailPage: React.FC = () => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           <div className="card" style={{ padding: '1.5rem' }}>
             <h3 style={{ fontSize: '1.05rem', color: '#ffffff', marginBottom: '1.25rem' }}>
-              Tiến Trình Phê Duyệt Chi
+              Tiến Trình Duyệt
             </h3>
             <ApprovalFlowTracker steps={proposal.approvalFlow} currentRole={proposal.currentApprovalRole} />
           </div>
@@ -1247,15 +1247,15 @@ export const PaymentDetailPage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* MODAL DUYỆT CHI (KẾ TOÁN) */}
+      {/* MODAL GIẢI NGÂN (KẾ TOÁN) */}
       <Modal
         isOpen={isDisburseOpen}
         onClose={() => setIsDisburseOpen(false)}
-        title="Kế Toán Duyệt Chi (Chi Tiền)"
+        title="Giải Ngân"
       >
         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
-          Xác nhận duyệt chi và chuyển tiền cho đề xuất <strong>{proposal.proposalCode}</strong> với
-          số tiền <strong style={{ color: 'var(--success)' }}>{formatCurrency(proposal.amount)}</strong> cho người nhận tiền / thụ hưởng:{' '}
+          Giải ngân đề xuất <strong>{proposal.proposalCode}</strong>:{' '}
+          <strong style={{ color: 'var(--success)' }}>{formatCurrency(proposal.amount)}</strong> cho{' '}
           <strong style={{ color: '#ffffff' }}>{proposal.beneficiary?.name || 'Bên Thu Mua'}</strong>
           {proposal.beneficiary?.accountNumber && (
             <span> ({proposal.beneficiary.bankName} - {proposal.beneficiary.accountNumber})</span>
@@ -1274,7 +1274,7 @@ export const PaymentDetailPage: React.FC = () => {
             />
           </div>
           <div>
-            <label className="form-label">Ghi Chú Duyệt Chi</label>
+            <label className="form-label">Ghi Chú</label>
             <textarea
               className="form-input"
               rows={2}
@@ -1285,7 +1285,7 @@ export const PaymentDetailPage: React.FC = () => {
             />
           </div>
           <div>
-            <label className="form-label">Biên Lai / Ủy Nhiệm Chi (Ảnh chụp)</label>
+            <label className="form-label">Biên Lai / UNC</label>
             {disburseData.receiptAttachment ? (
               <div
                 style={{
@@ -1355,7 +1355,7 @@ export const PaymentDetailPage: React.FC = () => {
           </button>
           <button type="button" onClick={handleDisburse} disabled={actionLoading} className="btn btn-primary">
             <DollarSign size={16} />
-            <span>{actionLoading ? 'Đang xử lý...' : 'Xác Nhận Duyệt Chi'}</span>
+            <span>{actionLoading ? 'Đang xử lý...' : 'Xác Nhận Giải Ngân'}</span>
           </button>
         </div>
       </Modal>

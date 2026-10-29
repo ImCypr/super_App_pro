@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { DEMO_ACCOUNTS } from '../../utils/formatters';
 import {
   Lock,
-  Mail,
+  User,
   ArrowRight,
   ShieldCheck,
   Zap,
@@ -138,11 +138,14 @@ export const LoginPage: React.FC = () => {
 
           <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="form-label">
-                Email công vụ <span className="required">*</span>
-              </label>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label className="form-label">
+                  Tài khoản đăng nhập <span className="required">*</span>
+                </label>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Tối đa 50 ký tự</span>
+              </div>
               <div style={{ position: 'relative' }}>
-                <Mail
+                <User
                   size={16}
                   style={{
                     position: 'absolute',
@@ -153,13 +156,15 @@ export const LoginPage: React.FC = () => {
                   }}
                 />
                 <input
-                  type="email"
+                  type="text"
                   required
+                  maxLength={50}
                   className="form-input"
                   style={{ paddingLeft: '38px' }}
-                  placeholder="name@demo.com"
+                  placeholder="Tên đăng nhập hoặc email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="username"
                 />
               </div>
             </div>
@@ -182,11 +187,13 @@ export const LoginPage: React.FC = () => {
                 <input
                   type="password"
                   required
+                  maxLength={50}
                   className="form-input"
                   style={{ paddingLeft: '38px' }}
                   placeholder="••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -214,107 +221,7 @@ export const LoginPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Cột bên phải: Chọn nhanh tài khoản demo 1 chạm */}
-        <div
-          className="card-glass"
-          style={{
-            padding: '2.5rem',
-            display: 'flex',
-            flexDirection: 'column',
-            justifyContent: 'space-between',
-          }}
-        >
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-              <ShieldCheck size={20} color="#a78bfa" />
-              <h3 style={{ fontSize: '1.15rem', color: '#ffffff' }}>
-                Danh Mục Tài Khoản & Chức Danh Nghiệp Vụ
-              </h3>
-            </div>
-            <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginBottom: '1.25rem', lineHeight: 1.5 }}>
-              Mỗi tài khoản được gắn cố định với <strong>duy nhất 1 chức danh</strong>. Người dùng không thể tự đổi vai trò của mình; chỉ có <strong>Admin</strong> mới có quyền phân bổ hoặc thay đổi quyền hạn.
-            </p>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              {DEMO_ACCOUNTS.map((acc) => (
-                <div
-                  key={acc.role}
-                  onClick={() => {
-                    setEmail(acc.email);
-                    setPassword(acc.password);
-                  }}
-                  title="Nhấp để điền thông tin tài khoản này vào ô đăng nhập"
-                  style={{
-                    padding: '0.75rem 1rem',
-                    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--radius-md)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    transition: 'var(--transition)',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.12)';
-                    e.currentTarget.style.borderColor = 'rgba(99, 102, 241, 0.4)';
-                    e.currentTarget.style.transform = 'translateX(4px)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
-                    e.currentTarget.style.borderColor = 'var(--border-color)';
-                    e.currentTarget.style.transform = 'translateX(0)';
-                  }}
-                >
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <strong style={{ fontSize: '0.875rem', color: '#ffffff' }}>{acc.name}</strong>
-                      <span className={`badge ${acc.badgeClass}`} style={{ fontSize: '0.675rem' }}>
-                        {acc.role.toUpperCase()}
-                      </span>
-                    </div>
-                    <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)' }}>
-                      {acc.description}
-                    </span>
-                  </div>
-
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      color: 'var(--primary)',
-                      fontWeight: 600,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.25rem',
-                    }}
-                  >
-                    Chọn <ArrowRight size={13} />
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div
-            style={{
-              marginTop: '1.5rem',
-              padding: '0.85rem',
-              backgroundColor: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.2)',
-              borderRadius: 'var(--radius-md)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.6rem',
-              fontSize: '0.75rem',
-              color: '#34d399',
-            }}
-          >
-            <ShieldCheck size={18} style={{ flexShrink: 0 }} />
-            <span>
-              Quy trình phân quyền tự động theo hạn mức ngân sách & thẩm quyền chức vụ.
-            </span>
-          </div>
-        </div>
       </div>
     </div>
   );

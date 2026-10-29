@@ -65,11 +65,12 @@ class AdminController {
 
   async updateUserRole(req, res) {
     try {
-      const { role } = req.body;
-      if (!role) {
+      const { role, roles } = req.body;
+      const targetRoles = roles || role;
+      if (!targetRoles || (Array.isArray(targetRoles) && targetRoles.length === 0)) {
         return res.status(400).json({ success: false, message: 'Vui lòng cung cấp chức danh cần gán' });
       }
-      const updatedUser = await adminService.updateUserRole(req.params.id, role);
+      const updatedUser = await adminService.updateUserRole(req.params.id, targetRoles);
       res.status(200).json({
         success: true,
         message: 'Cập nhật chức danh thành công',

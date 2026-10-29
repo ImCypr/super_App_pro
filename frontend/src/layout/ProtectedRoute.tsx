@@ -35,13 +35,16 @@ export const ProtectedRoute: React.FC<{
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  const userRoles: Role[] = (user.roles && user.roles.length > 0) ? user.roles : [user.role];
+
   // Nếu người dùng chưa được gán chức danh (unassigned), tự động điều hướng sang trang thông báo
-  if (user.role === 'unassigned' && location.pathname !== '/unassigned' && location.pathname !== '/profile') {
+  const isOnlyUnassigned = userRoles.length === 1 && userRoles[0] === 'unassigned';
+  if (isOnlyUnassigned && location.pathname !== '/unassigned' && location.pathname !== '/profile') {
     return <Navigate to="/unassigned" replace />;
   }
 
   // Kiểm tra quyền hạn vai trò nếu route có yêu cầu cụ thể
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  if (allowedRoles && !userRoles.some((r) => allowedRoles.includes(r))) {
     return <Navigate to="/dashboard" replace />;
   }
 

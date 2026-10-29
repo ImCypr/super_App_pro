@@ -47,7 +47,7 @@ import {
 
 export const PurchaseDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
 
   const [proposal, setProposal] = useState<PurchaseProposal | null>(null);
   const [loading, setLoading] = useState(true);
@@ -796,7 +796,7 @@ export const PurchaseDetailPage: React.FC = () => {
     ? (typeof tpFlowStep.approver === 'object' ? (tpFlowStep.approver as any)._id : tpFlowStep.approver)
     : null;
   const isTpApprovalTurn =
-    user?.role === 'truong_phong' &&
+    (hasRole('truong_phong') || Boolean(assignedManagerId && String(assignedManagerId) === String(user?._id))) &&
     (proposal.status === 'pending_tp_approval' || proposal.status === 'pending_approval') &&
     // Nếu có chỉ định directManager → chỉ người được chỉ định đó mới được duyệt
     // Nếu chưa có chỉ định → mọi trưởng phòng trong phòng ban đều được duyệt (tương thích cũ)
@@ -804,7 +804,7 @@ export const PurchaseDetailPage: React.FC = () => {
 
   // Bước 2: Thu mua lập 3-4 báo giá + văn bản giải trình
   const isProcurementTurn =
-    user?.role === 'thu_mua' &&
+    hasRole('thu_mua') &&
     (proposal.status === 'procurement_pricing' || proposal.status === 'procurement_review' || proposal.status === 'rejected_by_director');
 
   // [LUỒNG MỚI] Tự động tổng hợp chi phí thực tế từ tất cả các vật tư
@@ -867,32 +867,32 @@ export const PurchaseDetailPage: React.FC = () => {
   // Đơn <= 10 triệu: Giám đốc (hoặc Chủ tịch) duyệt
   const isDirectorApprovalTurn =
     isPendingPricingApproval &&
-    ((isOverTenMillion && user?.role === 'chu_tich') ||
-     (!isOverTenMillion && (user?.role === 'giam_doc' || user?.role === 'chu_tich')));
+    ((isOverTenMillion && hasRole('chu_tich')) ||
+      (!isOverTenMillion && hasRole('giam_doc', 'chu_tich')));
 
   // Cảnh báo khi Giám đốc đang xem đơn > 10 triệu (thuộc thẩm quyền Chủ tịch duyệt mua)
   const isDirectorWatchingOverLimit =
-    isPendingPricingApproval && isOverTenMillion && user?.role === 'giam_doc';
+    isPendingPricingApproval && isOverTenMillion && hasRole('giam_doc') && !hasRole('chu_tich');
 
   // Kế toán nhận bản sao theo dõi khi Lãnh đạo đang xem báo giá
   const isAccountantWatching =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     isPendingPricingApproval;
 
   // Bước 4: Thu mua thực hiện mua sắm (chọn: ứng trước, hóa đơn, hoặc hợp đồng)
   const isProcurementExecutionTurn =
-    user?.role === 'thu_mua' &&
+    hasRole('thu_mua') &&
     (proposal.status === 'procurement_execution' || proposal.status === 'rejected_by_accounting');
 
   // Bước 5: Kế toán xử lý chứng từ thanh toán / giải ngân
   const isAccountingProcessTurn =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     (proposal.status === 'pending_accounting' || proposal.status === 'accounting_review');
 
   // [LUỒNG MỚI] Chỉ Kế toán có nghiệp vụ lập đề xuất thanh toán khi đơn ở khâu kế toán xử lý (pending_accounting)
   // Thu mua chỉ có chức năng Thực hiện mua sắm, KHÔNG có chức năng đề xuất thanh toán và nghiệp vụ thanh toán
   const canCreatePayment =
-    user?.role === 'ke_toan' &&
+    hasRole('ke_toan') &&
     ['pending_accounting', 'accounting_review', 'procurement_execution', 'pending_payment', 'pending_payment_approval', 'disbursing', 'final_approved'].includes(proposal.status) &&
     remainingDisbursement > 0;
   const isDisbursingTurn = canCreatePayment;
@@ -904,9 +904,9 @@ export const PurchaseDetailPage: React.FC = () => {
 
   const canUserApprovePayment = (pay: PaymentProposal) => {
     const isPayOver10M = (pay.amount || 0) > 10000000;
-    if (pay.status === 'pending_chairman') return user?.role === 'chu_tich';
+    if (pay.status === 'pending_chairman') return hasRole('chu_tich');
     if (pay.status === 'pending_director') {
-      return isPayOver10M ? user?.role === 'chu_tich' : (user?.role === 'giam_doc' || user?.role === 'chu_tich');
+      return isPayOver10M ? hasRole('chu_tich') : hasRole('giam_doc', 'chu_tich');
     }
     return false;
   };
@@ -917,7 +917,7 @@ export const PurchaseDetailPage: React.FC = () => {
   // [TINH GỌN GIAO DIỆN] Phân quyền xem các chi tiết thủ tục tiền tệ (Thanh toán, giải ngân, mã UNC ngân hàng)
   // Chỉ Kế toán, Giám đốc, Chủ tịch và Quản trị viên mới xem các bảng tiền bạc rườm rà này
   const canViewFinancialDetails = Boolean(
-    user && ['ke_toan', 'giam_doc', 'chu_tich', 'admin'].includes(user.role)
+    user && hasRole('ke_toan', 'giam_doc', 'chu_tich', 'admin')
   );
 
   return (
@@ -1026,83 +1026,83 @@ export const PurchaseDetailPage: React.FC = () => {
           )}
 
           {/* [QUY TRÌNH MỚI] Kế toán tiếp nhận hóa đơn / xử lý khi đơn ở pending_accounting */}
-          {user?.role === 'ke_toan' &&
+          {hasRole('ke_toan') &&
             ['pending_accounting', 'accounting_review'].includes(proposal.status) &&
             !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
-            <>
-              {/* TRƯỜNG HỢP CÓ TẠM ỨNG HÓA ĐƠN:
+              <>
+                {/* TRƯỜNG HỢP CÓ TẠM ỨNG HÓA ĐƠN:
                   Kế toán xem 3 thông tin (Hóa đơn, Thông tin hóa đơn, Số tiền cần hoàn tạm ứng)
                   Kế toán chỉ cần:
                   - Bấm Xác nhận để hoàn thành (hoàn tất cả đơn mua sắm & đơn tạm ứng, không qua bước nộp tiền trung gian)
                   - Hoặc bấm Từ chối để yêu cầu Thu mua làm lại
               */}
-              {hasAdvance && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConfirmExactComment(
-                        isAdvanceGreater
-                          ? `Kế toán xác nhận hoàn tất hồ sơ mua sắm & quyết toán hoàn tạm ứng (Thu mua hoàn ứng số tiền chênh lệch ${formatCurrency(advanceDiff)}).`
-                          : isAdvanceExact
-                          ? 'Kế toán xác nhận hoàn tất hồ sơ mua sắm & tạm ứng (Hóa đơn khớp đúng 100% tiền tạm ứng).'
-                          : `Kế toán xác nhận hoàn tất hồ sơ mua sắm (Tạm ứng thiếu ${formatCurrency(Math.abs(advanceDiff))}).`
-                      );
-                      setIsConfirmExactOpen(true);
-                    }}
-                    className="btn btn-success"
-                    style={{ gap: '0.4rem', fontWeight: 700 }}
-                  >
-                    <CheckCircle2 size={16} />
-                    <span>
-                      {isAdvanceGreater
-                        ? `Xác Nhận Hoàn Thành (Hoàn Ứng ${formatCurrency(advanceDiff)})`
-                        : isAdvanceExact
-                        ? 'Xác Nhận Hoàn Thành (Hóa Đơn Vừa Đủ)'
-                        : `Xác Nhận Hoàn Thành (Thiếu ${formatCurrency(Math.abs(advanceDiff))})`}
-                    </span>
-                  </button>
-
-                  {/* Nếu tạm ứng thiếu, Kế toán có tùy chọn lập đề xuất thanh toán chi bù */}
-                  {isAdvanceLesser && (
-                    <Link
-                      to={`/payment/create?purchaseProposalId=${proposal._id}`}
-                      className="btn btn-primary"
-                      style={{ gap: '0.4rem' }}
+                {hasAdvance && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmExactComment(
+                          isAdvanceGreater
+                            ? `Kế toán xác nhận hoàn tất hồ sơ mua sắm & quyết toán hoàn tạm ứng (Thu mua hoàn ứng số tiền chênh lệch ${formatCurrency(advanceDiff)}).`
+                            : isAdvanceExact
+                              ? 'Kế toán xác nhận hoàn tất hồ sơ mua sắm & tạm ứng (Hóa đơn khớp đúng 100% tiền tạm ứng).'
+                              : `Kế toán xác nhận hoàn tất hồ sơ mua sắm (Tạm ứng thiếu ${formatCurrency(Math.abs(advanceDiff))}).`
+                        );
+                        setIsConfirmExactOpen(true);
+                      }}
+                      className="btn btn-success"
+                      style={{ gap: '0.4rem', fontWeight: 700 }}
                     >
-                      <CreditCard size={16} />
-                      <span>Lập Đề Xuất Thanh Toán Chi Bù ({formatCurrency(Math.abs(advanceDiff))})</span>
-                    </Link>
-                  )}
-                </>
-              )}
+                      <CheckCircle2 size={16} />
+                      <span>
+                        {isAdvanceGreater
+                          ? `Xác Nhận Hoàn Thành (Hoàn Ứng ${formatCurrency(advanceDiff)})`
+                          : isAdvanceExact
+                            ? 'Xác Nhận Hoàn Thành (Hóa Đơn Vừa Đủ)'
+                            : `Xác Nhận Hoàn Thành (Thiếu ${formatCurrency(Math.abs(advanceDiff))})`}
+                      </span>
+                    </button>
 
-              {/* TRƯỜNG HỢP KHÔNG TẠM ỨNG (GIỮ NGUYÊN 100% LUỒNG CŨ) -> Tiếp nhận & Lập đề xuất thanh toán gửi Sếp */}
-              {!hasAdvance && (
-                <Link
-                  to={`/payment/create?purchaseProposalId=${proposal._id}`}
-                  className="btn btn-primary"
+                    {/* Nếu tạm ứng thiếu, Kế toán có tùy chọn lập đề xuất thanh toán chi bù */}
+                    {isAdvanceLesser && (
+                      <Link
+                        to={`/payment/create?purchaseProposalId=${proposal._id}`}
+                        className="btn btn-primary"
+                        style={{ gap: '0.4rem' }}
+                      >
+                        <CreditCard size={16} />
+                        <span>Lập Đề Xuất Thanh Toán Chi Bù ({formatCurrency(Math.abs(advanceDiff))})</span>
+                      </Link>
+                    )}
+                  </>
+                )}
+
+                {/* TRƯỜNG HỢP KHÔNG TẠM ỨNG (GIỮ NGUYÊN 100% LUỒNG CŨ) -> Tiếp nhận & Lập đề xuất thanh toán gửi Sếp */}
+                {!hasAdvance && (
+                  <Link
+                    to={`/payment/create?purchaseProposalId=${proposal._id}`}
+                    className="btn btn-primary"
+                    style={{ gap: '0.4rem' }}
+                  >
+                    <CreditCard size={16} />
+                    <span>Tiếp Nhận & Lập Đề Xuất Thanh Toán Gửi Sếp</span>
+                  </Link>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectReason('');
+                    setIsRejectOpen(true);
+                  }}
+                  className="btn btn-danger"
                   style={{ gap: '0.4rem' }}
                 >
-                  <CreditCard size={16} />
-                  <span>Tiếp Nhận & Lập Đề Xuất Thanh Toán Gửi Sếp</span>
-                </Link>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setRejectReason('');
-                  setIsRejectOpen(true);
-                }}
-                className="btn btn-danger"
-                style={{ gap: '0.4rem' }}
-              >
-                <XCircle size={16} />
-                <span>Từ Chối Hóa Đơn (Yêu Cầu Làm Lại)</span>
-              </button>
-            </>
-          )}
+                  <XCircle size={16} />
+                  <span>Từ Chối Hóa Đơn (Yêu Cầu Làm Lại)</span>
+                </button>
+              </>
+            )}
 
           {/* [QUY TRÌNH 2 MỚI] Liên kết tới đề xuất thanh toán đang được xử lý */}
           {pendingPaymentForApproval && (
@@ -1721,15 +1721,15 @@ export const PurchaseDetailPage: React.FC = () => {
                   </div>
                   <div>
                     <h3 style={{ fontSize: '1.15rem', color: '#34d399', margin: 0, fontWeight: 700 }}>
-                      Hóa Đơn / Hợp Đồng Đã Được Thanh Toán & Lưu Trữ Hoàn Tất
+                      Đã Giải Ngân & Lưu Trữ
                     </h3>
                     <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
-                      Đề xuất thanh toán đã được Giám đốc/Chủ tịch xác nhận giải ngân và Kế toán đã duyệt chi thành công cho Thu mua. Hóa đơn này đã được lưu vào mục "Hóa Đơn Đã Hoàn Thành".
+                      Lãnh đạo đã duyệt, Kế toán đã giải ngân.
                     </p>
                   </div>
                 </div>
                 <span className="badge badge-success" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
-                  ✓ ĐÃ LƯU TRỮ HOÀN TẤT
+                  ✓ HOÀN TẤT
                 </span>
               </div>
 
@@ -1765,7 +1765,7 @@ export const PurchaseDetailPage: React.FC = () => {
           {proposal.procurementExecution?.actionType && (
             <div className="card" style={{ borderLeft: '4px solid var(--accent-cyan)' }}>
               {/* [QUY TRÌNH MỚI]: Kế toán tiếp nhận hóa đơn & lập đề xuất thanh toán */}
-              {user?.role === 'ke_toan' && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
+              {hasRole('ke_toan') && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
                 <div
                   style={{
                     padding: '0.85rem 1rem',
@@ -1798,7 +1798,7 @@ export const PurchaseDetailPage: React.FC = () => {
               )}
 
               {/* Thông báo tiến độ cho Thu mua: Thu mua đã hoàn thành khâu thực hiện mua sắm, hồ sơ đã chuyển sang Kế toán */}
-              {user?.role === 'thu_mua' && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
+              {hasRole('thu_mua') && !proposal.isInvoiceCompleted && proposal.status !== 'completed' && (
                 <div
                   style={{
                     padding: '0.75rem 1rem',
@@ -1893,8 +1893,8 @@ export const PurchaseDetailPage: React.FC = () => {
                                   {diff > 0
                                     ? `Thu mua hoàn tạm ứng: `
                                     : diff < 0
-                                    ? `Công ty chi bù thêm: `
-                                    : 'Khớp đúng 100%: '}
+                                      ? `Công ty chi bù thêm: `
+                                      : 'Khớp đúng 100%: '}
                                 </strong>
                                 <strong
                                   className="font-mono"
@@ -1907,8 +1907,8 @@ export const PurchaseDetailPage: React.FC = () => {
                                   {diff > 0
                                     ? formatCurrency(diff)
                                     : diff < 0
-                                    ? formatCurrency(Math.abs(diff))
-                                    : '0 đ'}
+                                      ? formatCurrency(Math.abs(diff))
+                                      : '0 đ'}
                                 </strong>
                               </span>
                             )}
@@ -2143,296 +2143,296 @@ export const PurchaseDetailPage: React.FC = () => {
           {canViewFinancialDetails ? (
             <>
               <div className="card">
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '1rem',
-                flexWrap: 'wrap',
-                gap: '0.75rem',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <CreditCard size={18} color="var(--primary)" />
-                <h3 style={{ fontSize: '1.05rem', color: '#ffffff' }}>
-                  Đề Xuất Thanh Toán Liên Kết ({paymentProposals.length})
-                </h3>
-              </div>
-
-              {canCreatePayment && (
-                <Link
-                  to={`/payment/create?purchaseProposalId=${proposal._id}`}
-                  className="btn btn-primary btn-sm"
-                  style={{ gap: '0.35rem' }}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: '1rem',
+                    flexWrap: 'wrap',
+                    gap: '0.75rem',
+                  }}
                 >
-                  <PlusCircle size={14} />
-                  <span>Tạo Đề Xuất Thanh Toán Mới</span>
-                </Link>
-              )}
-            </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <CreditCard size={18} color="var(--primary)" />
+                    <h3 style={{ fontSize: '1.05rem', color: '#ffffff' }}>
+                      Đề Xuất Thanh Toán Liên Kết ({paymentProposals.length})
+                    </h3>
+                  </div>
 
-            {/* Hướng dẫn quy trình phân luồng duyệt chi */}
-            <div
-              style={{
-                padding: '0.65rem 0.85rem',
-                backgroundColor: 'rgba(99, 102, 241, 0.08)',
-                border: '1px solid rgba(99, 102, 241, 0.2)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: '0.75rem',
-                color: 'var(--text-secondary)',
-                marginBottom: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                flexWrap: 'wrap',
-                gap: '0.5rem',
-              }}
-            >
-              <span>
-                <strong>Quy trình phân luồng:</strong> Kế toán lập đề xuất ➔ ≤ 10 triệu (Giám đốc duyệt) / &gt; 10 triệu (Chủ tịch duyệt) ➔ Kế toán xác nhận giải ngân.
-              </span>
-              <span className="badge badge-secondary" style={{ fontSize: '0.7rem' }}>
-                1 đơn vật tư - Nhiều đợt thanh toán
-              </span>
-            </div>
-
-            {paymentProposals.length === 0 ? (
-              <div
-                style={{
-                  textAlign: 'center',
-                  padding: '2rem 1rem',
-                  color: 'var(--text-muted)',
-                  fontSize: '0.85rem',
-                  backgroundColor: 'rgba(255, 255, 255, 0.01)',
-                  borderRadius: 'var(--radius-md)',
-                  border: '1px dashed var(--border-color)',
-                }}
-              >
-                <CreditCard size={32} style={{ margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
-                <div>Chưa có đề xuất thanh toán nào được lập cho đơn vật tư này.</div>
-                {canCreatePayment && (
-                  <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+                  {canCreatePayment && (
                     <Link
                       to={`/payment/create?purchaseProposalId=${proposal._id}`}
-                      style={{ color: 'var(--primary)', textDecoration: 'underline' }}
+                      className="btn btn-primary btn-sm"
+                      style={{ gap: '0.35rem' }}
                     >
-                      Bấm vào đây để kế toán lập hồ sơ trình lãnh đạo duyệt chi.
+                      <PlusCircle size={14} />
+                      <span>Tạo Đề Xuất Thanh Toán Mới</span>
                     </Link>
+                  )}
+                </div>
+
+                {/* Hướng dẫn quy trình phân luồng duyệt chi */}
+                <div
+                  style={{
+                    padding: '0.65rem 0.85rem',
+                    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                    border: '1px solid rgba(99, 102, 241, 0.2)',
+                    borderRadius: 'var(--radius-md)',
+                    fontSize: '0.75rem',
+                    color: 'var(--text-secondary)',
+                    marginBottom: '1rem',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    flexWrap: 'wrap',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <span>
+                    <strong>Quy trình phân luồng:</strong> Kế toán lập đề xuất ➔ ≤ 10 triệu (Giám đốc duyệt) / &gt; 10 triệu (Chủ tịch duyệt) ➔ Kế toán xác nhận giải ngân.
+                  </span>
+                  <span className="badge badge-secondary" style={{ fontSize: '0.7rem' }}>
+                    1 đơn vật tư - Nhiều đợt thanh toán
+                  </span>
+                </div>
+
+                {paymentProposals.length === 0 ? (
+                  <div
+                    style={{
+                      textAlign: 'center',
+                      padding: '2rem 1rem',
+                      color: 'var(--text-muted)',
+                      fontSize: '0.85rem',
+                      backgroundColor: 'rgba(255, 255, 255, 0.01)',
+                      borderRadius: 'var(--radius-md)',
+                      border: '1px dashed var(--border-color)',
+                    }}
+                  >
+                    <CreditCard size={32} style={{ margin: '0 auto 0.5rem auto', opacity: 0.4 }} />
+                    <div>Chưa có đề xuất thanh toán.</div>
+                    {canCreatePayment && (
+                      <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+                        <Link
+                          to={`/payment/create?purchaseProposalId=${proposal._id}`}
+                          style={{ color: 'var(--primary)', textDecoration: 'underline' }}
+                        >
+                          Lập đề xuất thanh toán
+                        </Link>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <div className="table-container" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                      <table className="table" style={{ minWidth: '780px' }}>
+                        <thead>
+                          <tr>
+                            <th>Mã Đơn</th>
+                            <th>Đợt / Ghi Chú</th>
+                            <th>Số Tiền</th>
+                            <th>Cấp Phê Duyệt</th>
+                            <th>Người Thụ Hưởng</th>
+                            <th>Trạng Thái</th>
+                            <th style={{ textAlign: 'right' }}>Thao Tác</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentProposals
+                            .slice((paymentsPage - 1) * paymentsPageSize, paymentsPage * paymentsPageSize)
+                            .map((pay) => (
+                              <tr
+                                key={pay._id}
+                                onClick={() => setViewingPayment(pay)}
+                                style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
+                                title="Bấm vào dòng này để xem chi tiết hóa đơn &amp; in thông tin"
+                                className="table-row-clickable"
+                              >
+                                <td>
+                                  <span
+                                    className="font-mono"
+                                    style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}
+                                  >
+                                    {pay.proposalCode || `TT-${pay._id.slice(-6).toUpperCase()}`}
+                                  </span>
+                                  <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                    {formatDate(pay.createdAt)}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div style={{ fontWeight: 600, fontSize: '0.825rem' }}>
+                                    {pay.installmentNote || 'Thanh toán'}
+                                  </div>
+                                  <div
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      color: 'var(--text-secondary)',
+                                      maxWidth: '180px',
+                                      textOverflow: 'ellipsis',
+                                      overflow: 'hidden',
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                    title={pay.paymentReason}
+                                  >
+                                    {pay.paymentReason}
+                                  </div>
+                                </td>
+                                <td style={{ fontWeight: 700, color: 'var(--accent-cyan)' }} className="font-mono">
+                                  {formatCurrency(pay.amount)}
+                                </td>
+                                <td>
+                                  {pay.amount <= 10000000 ? (
+                                    <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>
+                                      ≤ 10tr (Giám đốc)
+                                    </span>
+                                  ) : (
+                                    <span className="badge badge-purple" style={{ fontSize: '0.7rem' }}>
+                                      &gt; 10tr (Chủ tịch)
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ fontSize: '0.775rem' }}>
+                                  <div style={{ fontWeight: 600 }}>{pay.beneficiary?.name}</div>
+                                  <div style={{ color: 'var(--text-muted)' }}>
+                                    {pay.beneficiary?.bankName} - {pay.beneficiary?.accountNumber}
+                                  </div>
+                                </td>
+                                <td>
+                                  <StatusBadge status={pay.status} type="payment" />
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    {canUserApprovePayment(pay) && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedPaymentForApproval(pay);
+                                            setIsPaymentApproveOpen(true);
+                                          }}
+                                          className="btn btn-success btn-sm"
+                                          style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', gap: '0.25rem' }}
+                                          title="Xác nhận phê duyệt chi"
+                                        >
+                                          {user?.role === 'chu_tich' ? <Crown size={13} /> : <CheckCircle2 size={13} />}
+                                          <span>Duyệt Chi</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedPaymentForApproval(pay);
+                                            setIsPaymentRejectOpen(true);
+                                          }}
+                                          className="btn btn-danger btn-sm"
+                                          style={{ padding: '0.25rem 0.45rem', fontSize: '0.75rem' }}
+                                          title="Từ chối duyệt chi"
+                                        >
+                                          <XCircle size={13} />
+                                          <span>Từ chối</span>
+                                        </button>
+                                      </>
+                                    )}
+                                    {pay.attachments && pay.attachments.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handlePreviewFile(pay.attachments![0]);
+                                        }}
+                                        className="btn btn-ghost btn-sm"
+                                        style={{ padding: '0.25rem 0.4rem', fontSize: '0.75rem' }}
+                                        title="Xem hóa đơn/chứng từ đính kèm"
+                                      >
+                                        <Eye size={14} />
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPrintPayment(pay);
+                                      }}
+                                      className="btn btn-ghost btn-sm"
+                                      style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--accent-cyan)', gap: '0.25rem' }}
+                                      title="In biểu mẫu đề nghị thanh toán / hóa đơn (PDF)"
+                                    >
+                                      <Printer size={13} />
+                                      <span>In PDF</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setViewingPayment(pay);
+                                      }}
+                                      className="btn btn-secondary btn-sm"
+                                      style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', gap: '0.35rem' }}
+                                    >
+                                      <Eye size={13} />
+                                      <span>Chi tiết</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* THANH PHÂN TRANG DANH SÁCH ĐỀ XUẤT THANH TOÁN */}
+                    {paymentProposals.length > 5 && (
+                      <Pagination
+                        currentPage={paymentsPage}
+                        totalItems={paymentProposals.length}
+                        pageSize={paymentsPageSize}
+                        onPageChange={setPaymentsPage}
+                        onPageSizeChange={setPaymentsPageSize}
+                        pageSizeOptions={[5, 10, 20]}
+                        itemName="đề xuất thanh toán"
+                      />
+                    )}
                   </div>
                 )}
               </div>
-            ) : (
-              <div>
-                <div className="table-container" style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                  <table className="table" style={{ minWidth: '780px' }}>
-                    <thead>
-                      <tr>
-                        <th>Mã Đơn</th>
-                        <th>Đợt / Ghi Chú</th>
-                        <th>Số Tiền</th>
-                        <th>Cấp Phê Duyệt</th>
-                        <th>Người Thụ Hưởng</th>
-                        <th>Trạng Thái</th>
-                        <th style={{ textAlign: 'right' }}>Thao Tác</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paymentProposals
-                        .slice((paymentsPage - 1) * paymentsPageSize, paymentsPage * paymentsPageSize)
-                        .map((pay) => (
-                          <tr
-                            key={pay._id}
-                            onClick={() => setViewingPayment(pay)}
-                            style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
-                            title="Bấm vào dòng này để xem chi tiết hóa đơn &amp; in thông tin"
-                            className="table-row-clickable"
-                          >
-                            <td>
-                              <span
-                                className="font-mono"
-                                style={{ fontWeight: 600, color: 'var(--accent-cyan)' }}
-                              >
-                                {pay.proposalCode || `TT-${pay._id.slice(-6).toUpperCase()}`}
-                              </span>
-                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                                {formatDate(pay.createdAt)}
-                              </div>
+
+              {/* Thẻ lịch sử các đợt giải ngân nếu có */}
+              {proposal.disbursements && proposal.disbursements.length > 0 && (
+                <div className="card">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                    <DollarSign size={18} color="var(--success)" />
+                    <h3 style={{ fontSize: '1.05rem', color: '#ffffff' }}>Lịch Sử Các Đợt Giải Ngân</h3>
+                  </div>
+
+                  <div className="table-container">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Thời Gian</th>
+                          <th>Số Tiền</th>
+                          <th>Người Thực Hiện</th>
+                          <th>Ghi Chú</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {proposal.disbursements.map((d, index) => (
+                          <tr key={index}>
+                            <td>{formatDate(d.date)}</td>
+                            <td style={{ fontWeight: 700, color: 'var(--success)' }} className="font-mono">
+                              {formatCurrency(d.amount)}
                             </td>
-                            <td>
-                              <div style={{ fontWeight: 600, fontSize: '0.825rem' }}>
-                                {pay.installmentNote || 'Thanh toán'}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: '0.75rem',
-                                  color: 'var(--text-secondary)',
-                                  maxWidth: '180px',
-                                  textOverflow: 'ellipsis',
-                                  overflow: 'hidden',
-                                  whiteSpace: 'nowrap',
-                                }}
-                                title={pay.paymentReason}
-                              >
-                                {pay.paymentReason}
-                              </div>
-                            </td>
-                            <td style={{ fontWeight: 700, color: 'var(--accent-cyan)' }} className="font-mono">
-                              {formatCurrency(pay.amount)}
-                            </td>
-                            <td>
-                              {pay.amount <= 10000000 ? (
-                                <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>
-                                  ≤ 10tr (Giám đốc)
-                                </span>
-                              ) : (
-                                <span className="badge badge-purple" style={{ fontSize: '0.7rem' }}>
-                                  &gt; 10tr (Chủ tịch)
-                                </span>
-                              )}
-                            </td>
-                            <td style={{ fontSize: '0.775rem' }}>
-                              <div style={{ fontWeight: 600 }}>{pay.beneficiary?.name}</div>
-                              <div style={{ color: 'var(--text-muted)' }}>
-                                {pay.beneficiary?.bankName} - {pay.beneficiary?.accountNumber}
-                              </div>
-                            </td>
-                            <td>
-                              <StatusBadge status={pay.status} type="payment" />
-                            </td>
-                            <td style={{ textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: '0.35rem', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
-                                {canUserApprovePayment(pay) && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedPaymentForApproval(pay);
-                                        setIsPaymentApproveOpen(true);
-                                      }}
-                                      className="btn btn-success btn-sm"
-                                      style={{ padding: '0.25rem 0.55rem', fontSize: '0.75rem', gap: '0.25rem' }}
-                                      title="Xác nhận phê duyệt chi"
-                                    >
-                                      {user?.role === 'chu_tich' ? <Crown size={13} /> : <CheckCircle2 size={13} />}
-                                      <span>Duyệt Chi</span>
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setSelectedPaymentForApproval(pay);
-                                        setIsPaymentRejectOpen(true);
-                                      }}
-                                      className="btn btn-danger btn-sm"
-                                      style={{ padding: '0.25rem 0.45rem', fontSize: '0.75rem' }}
-                                      title="Từ chối duyệt chi"
-                                    >
-                                      <XCircle size={13} />
-                                      <span>Từ chối</span>
-                                    </button>
-                                  </>
-                                )}
-                                {pay.attachments && pay.attachments.length > 0 && (
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handlePreviewFile(pay.attachments![0]);
-                                    }}
-                                    className="btn btn-ghost btn-sm"
-                                    style={{ padding: '0.25rem 0.4rem', fontSize: '0.75rem' }}
-                                    title="Xem hóa đơn/chứng từ đính kèm"
-                                  >
-                                    <Eye size={14} />
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setPrintPayment(pay);
-                                  }}
-                                  className="btn btn-ghost btn-sm"
-                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--accent-cyan)', gap: '0.25rem' }}
-                                  title="In biểu mẫu đề nghị thanh toán / hóa đơn (PDF)"
-                                >
-                                  <Printer size={13} />
-                                  <span>In PDF</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setViewingPayment(pay);
-                                  }}
-                                  className="btn btn-secondary btn-sm"
-                                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', gap: '0.35rem' }}
-                                >
-                                  <Eye size={13} />
-                                  <span>Chi tiết</span>
-                                </button>
-                              </div>
-                            </td>
+                            <td>{(d.processedBy as any)?.fullName || 'Kế toán'}</td>
+                            <td style={{ color: 'var(--text-secondary)' }}>{d.note || '—'}</td>
                           </tr>
                         ))}
-                    </tbody>
-                  </table>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-
-                {/* THANH PHÂN TRANG DANH SÁCH ĐỀ XUẤT THANH TOÁN */}
-                {paymentProposals.length > 5 && (
-                  <Pagination
-                    currentPage={paymentsPage}
-                    totalItems={paymentProposals.length}
-                    pageSize={paymentsPageSize}
-                    onPageChange={setPaymentsPage}
-                    onPageSizeChange={setPaymentsPageSize}
-                    pageSizeOptions={[5, 10, 20]}
-                    itemName="đề xuất thanh toán"
-                  />
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Thẻ lịch sử các đợt giải ngân nếu có */}
-          {proposal.disbursements && proposal.disbursements.length > 0 && (
-            <div className="card">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-                <DollarSign size={18} color="var(--success)" />
-                <h3 style={{ fontSize: '1.05rem', color: '#ffffff' }}>Lịch Sử Các Đợt Giải Ngân</h3>
-              </div>
-
-              <div className="table-container">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Thời Gian</th>
-                      <th>Số Tiền</th>
-                      <th>Người Thực Hiện</th>
-                      <th>Ghi Chú</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {proposal.disbursements.map((d, index) => (
-                      <tr key={index}>
-                        <td>{formatDate(d.date)}</td>
-                        <td style={{ fontWeight: 700, color: 'var(--success)' }} className="font-mono">
-                          {formatCurrency(d.amount)}
-                        </td>
-                        <td>{(d.processedBy as any)?.fullName || 'Kế toán'}</td>
-                        <td style={{ color: 'var(--text-secondary)' }}>{d.note || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
+              )}
+            </>
+          ) : (
             /* Thông báo tóm tắt ngắn gọn, lịch sự cho Nhân viên đề xuất và Trưởng phòng */
             proposal.status === 'completed' ? (
               <div
@@ -3443,7 +3443,7 @@ export const PurchaseDetailPage: React.FC = () => {
                   <Calculator size={18} />
                   <span>KẾT QUẢ TỰ ĐỘNG TÍNH SỐ TIỀN CẦN HOÀN TRẢ TẠM ỨNG</span>
                 </div>
-                
+
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', fontSize: '0.825rem', marginBottom: '0.65rem' }}>
                   <div>
                     <span style={{ color: 'var(--text-muted)' }}>Số tiền đã tạm ứng:</span>
@@ -3472,8 +3472,8 @@ export const PurchaseDetailPage: React.FC = () => {
                       {diff > 0
                         ? formatCurrency(diff)
                         : diff < 0
-                        ? formatCurrency(Math.abs(diff))
-                        : '0 đ (Vừa đủ 100%)'}
+                          ? formatCurrency(Math.abs(diff))
+                          : '0 đ (Vừa đủ 100%)'}
                     </div>
                   </div>
                 </div>
@@ -3483,8 +3483,8 @@ export const PurchaseDetailPage: React.FC = () => {
                     {diff > 0
                       ? `Tạm ứng dư ${formatCurrency(diff)}. Chương trình sẽ gửi 3 thông tin (Hóa đơn, Thông tin hóa đơn, Số tiền cần hoàn tạm ứng: ${formatCurrency(diff)}) trực tiếp cho Kế toán. Kế toán chỉ cần bấm xác nhận để hoàn thành hoặc từ chối để thu mua làm lại (không có bước yêu cầu kế toán xác nhận đã chuyển trả lại kế toán).`
                       : diff < 0
-                      ? `Hóa đơn thực tế cao hơn tiền tạm ứng ${formatCurrency(Math.abs(diff))}. Kế toán sẽ nhận được thông tin để xác nhận hoặc lập đề xuất thanh toán chi bù.`
-                      : 'Hóa đơn vừa khớp đúng 100% số tiền đã tạm ứng. Kế toán chỉ cần bấm Xác nhận để hoàn thành.'}
+                        ? `Hóa đơn thực tế cao hơn tiền tạm ứng ${formatCurrency(Math.abs(diff))}. Kế toán sẽ nhận được thông tin để xác nhận hoặc lập đề xuất thanh toán chi bù.`
+                        : 'Hóa đơn vừa khớp đúng 100% số tiền đã tạm ứng. Kế toán chỉ cần bấm Xác nhận để hoàn thành.'}
                   </em>
                 </div>
               </div>
@@ -3903,8 +3903,8 @@ export const PurchaseDetailPage: React.FC = () => {
                   {actionLoading
                     ? 'Đang xử lý...'
                     : user?.role === 'chu_tich'
-                    ? 'Chủ Tịch Xác Nhận Giải Ngân'
-                    : 'GĐ Xác Nhận Giải Ngân'}
+                      ? 'Chủ Tịch Xác Nhận Giải Ngân'
+                      : 'GĐ Xác Nhận Giải Ngân'}
                 </span>
               </button>
             </div>
@@ -4169,15 +4169,15 @@ export const PurchaseDetailPage: React.FC = () => {
                   {advanceDiff > 0
                     ? formatCurrency(advanceDiff)
                     : advanceDiff < 0
-                    ? `${formatCurrency(Math.abs(advanceDiff))} (Công ty chi bù)`
-                    : '0 đ (Vừa đủ 100%)'}
+                      ? `${formatCurrency(Math.abs(advanceDiff))} (Công ty chi bù)`
+                      : '0 đ (Vừa đủ 100%)'}
                 </span>
                 <span style={{ fontSize: '0.775rem', color: 'var(--text-secondary)' }}>
                   {advanceDiff > 0
                     ? `(Tạm ứng dư: ${formatCurrency(advAmount)} - Hóa đơn: ${formatCurrency(invAmount)})`
                     : advanceDiff < 0
-                    ? `(Tạm ứng thiếu: ${formatCurrency(advAmount)} < Hóa đơn: ${formatCurrency(invAmount)})`
-                    : '(Khớp đúng tuyệt đối số tiền tạm ứng)'}
+                      ? `(Tạm ứng thiếu: ${formatCurrency(advAmount)} < Hóa đơn: ${formatCurrency(invAmount)})`
+                      : '(Khớp đúng tuyệt đối số tiền tạm ứng)'}
                 </span>
               </div>
             </div>

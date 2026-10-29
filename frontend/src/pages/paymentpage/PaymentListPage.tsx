@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export const PaymentListPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const navigate = useNavigate();
   const [proposals, setProposals] = useState<PaymentProposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,10 +35,10 @@ export const PaymentListPage: React.FC = () => {
 
   // Cho phép Kế toán, Giám đốc, Chủ tịch truy cập danh sách đề xuất thanh toán
   useEffect(() => {
-    if (user && !['ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+    if (user && !hasRole('ke_toan', 'giam_doc', 'chu_tich')) {
       navigate('/dashboard', { replace: true });
     }
-  }, [user, navigate]);
+  }, [user, navigate, hasRole]);
 
   const loadProposals = async () => {
     setLoading(true);
@@ -78,7 +78,7 @@ export const PaymentListPage: React.FC = () => {
 
   const totalAmount = proposals.reduce((sum, p) => sum + (p.amount || 0), 0);
 
-  if (!user || !['ke_toan', 'giam_doc', 'chu_tich'].includes(user.role)) {
+  if (!user || !hasRole('ke_toan', 'giam_doc', 'chu_tich')) {
     return null;
   }
 
@@ -105,15 +105,15 @@ export const PaymentListPage: React.FC = () => {
             <h1>Đề Xuất Thanh Toán</h1>
           </div>
           <p style={{ fontSize: '0.875rem' }}>
-            Kế toán tiếp nhận chứng từ từ Thu mua để lập đề xuất thanh toán trình Sếp xác nhận giải ngân và duyệt chi.
+            Lập đề xuất thanh toán, trình duyệt và giải ngân.
           </p>
         </div>
 
-        {user.role === 'ke_toan' && (
+        {hasRole('ke_toan') && (
           <div className="page-header-actions">
             <Link to="/payment/create" className="btn btn-primary" style={{ backgroundColor: '#10b981', borderColor: '#10b981' }}>
               <PlusCircle size={17} />
-              <span>Lập Đề Xuất Thanh Toán Mới</span>
+              <span>Lập Đề Xuất</span>
             </Link>
           </div>
         )}
@@ -141,21 +141,21 @@ export const PaymentListPage: React.FC = () => {
         <div className="card" style={{ padding: '1rem 1.25rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <Clock size={13} />
-            Chờ Sếp Xác Nhận Giải Ngân
+            Chờ Lãnh Đạo Duyệt
           </div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#fbbf24' }}>{pendingCount}</div>
         </div>
         <div className="card" style={{ padding: '1rem 1.25rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <DollarSign size={13} />
-            Chờ Kế Toán Duyệt Chi
+            Chờ Giải Ngân
           </div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#38bdf8' }}>{pendingDisbursement}</div>
         </div>
         <div className="card" style={{ padding: '1rem 1.25rem' }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--success)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
             <CheckCircle2 size={13} />
-            Đã Duyệt Chi & Hoàn Tất
+            Đã Giải Ngân
           </div>
           <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#34d399' }}>{completedCount}</div>
         </div>
@@ -189,7 +189,7 @@ export const PaymentListPage: React.FC = () => {
             type="text"
             className="form-input"
             style={{ paddingLeft: '38px' }}
-            placeholder="Tìm theo mã đề xuất, mã đơn mua sắm, người tạo, người thụ hưởng..."
+            placeholder="Tìm theo mã, người tạo, người thụ hưởng..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -209,8 +209,8 @@ export const PaymentListPage: React.FC = () => {
             <option value="all">Tất cả trạng thái</option>
             <option value="pending_director">Chờ Giám đốc xác nhận giải ngân</option>
             <option value="pending_chairman">Chờ Chủ tịch xác nhận giải ngân</option>
-            <option value="pending_disbursement">Chờ Kế toán duyệt chi</option>
-            <option value="completed">Đã duyệt chi & hoàn thành</option>
+            <option value="pending_disbursement">Chờ Kế toán giải ngân</option>
+            <option value="completed">Đã giải ngân</option>
             <option value="rejected">Bị từ chối</option>
           </select>
         </div>

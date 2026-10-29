@@ -34,10 +34,11 @@ class PaymentProposalController {
   // Lãnh đạo phê duyệt chi (Giám đốc hoặc Chủ tịch)
   async approve(req, res) {
     try {
+      const userRoles = (req.user.roles && req.user.roles.length > 0) ? req.user.roles : [req.user.role];
       const proposal = await paymentProposalService.approve(
         req.params.id,
         req.user._id,
-        req.user.role,
+        userRoles,
         req.body.comment
       );
       res.status(200).json({ success: true, data: proposal });
@@ -49,10 +50,11 @@ class PaymentProposalController {
   // Lãnh đạo từ chối đề xuất thanh toán
   async reject(req, res) {
     try {
+      const userRoles = (req.user.roles && req.user.roles.length > 0) ? req.user.roles : [req.user.role];
       const proposal = await paymentProposalService.reject(
         req.params.id,
         req.user._id,
-        req.user.role,
+        userRoles,
         req.body.reason
       );
       res.status(200).json({ success: true, data: proposal });

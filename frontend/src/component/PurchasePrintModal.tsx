@@ -376,7 +376,7 @@ export const PurchasePrintModal: React.FC<PurchasePrintModalProps> = ({
                 <tr>
                   <td style={{ verticalAlign: 'top', width: '52%', border: 'none', padding: 0 }}>
                     <div style={{ fontSize: '10.5pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
-                      CÔNG TY CỔ PHẦN CÔNG NGHỆ & ĐẦU TƯ PROFLOW
+                      CÔNG TY TNHH TIẾN ANH
                     </div>
                     <div style={{ fontSize: '10.5pt', fontWeight: 'bold', textTransform: 'uppercase' }}>
                       PHÒNG BAN: {proposal.department?.name || 'VẬN HÀNH'}

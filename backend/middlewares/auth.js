@@ -32,25 +32,31 @@ const protect = async (req, res, next) => {
   }
 };
 
-// Phân quyền truy cập theo vai trò người dùng (Mỗi tài khoản 1 vai trò duy nhất)
+// Phân quyền truy cập theo vai trò người dùng (Tài khoản có thể giữ 1 hoặc nhiều vai trò)
 const restrictTo = (...roles) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ message: 'Bạn chưa đăng nhập' });
     }
 
-    if (req.user.role === 'unassigned') {
+    const userRoles = req.user.roles && req.user.roles.length > 0
+      ? req.user.roles
+      : (req.user.role ? [req.user.role] : []);
+
+    if (userRoles.length === 1 && userRoles[0] === 'unassigned') {
       return res.status(403).json({
         message: 'Tài khoản của bạn chưa được gán chức danh nghiệp vụ. Vui lòng liên hệ Quản trị viên (Admin) để được cấp quyền.',
         isUnassigned: true,
       });
     }
 
-    if (!roles.includes(req.user.role)) {
+    const hasPermission = roles.some((role) => userRoles.includes(role));
+    if (!hasPermission) {
       return res.status(403).json({
         message: 'Bạn không có quyền thực hiện hành động này với chức danh hiện tại',
         requiredRoles: roles,
         currentRole: req.user.role,
+        currentRoles: userRoles,
       });
     }
 

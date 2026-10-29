@@ -11,8 +11,13 @@ import {
 } from 'lucide-react';
 import { departmentService } from '../../services/departmentService';
 import { Department } from '../../models';
+import { useAuth } from '../../context/AuthContext';
 
 export const DepartmentManagementPage: React.FC = () => {
+  const { user } = useAuth();
+  // Quyền thao tác khớp với backend: Admin & Chủ tịch toàn quyền, Giám đốc được thêm/sửa
+  const canEdit = ['admin', 'giam_doc', 'chu_tich'].includes(user?.role || '');
+  const canDelete = ['admin', 'chu_tich'].includes(user?.role || '');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
@@ -64,13 +69,14 @@ export const DepartmentManagementPage: React.FC = () => {
     }
 
     setActionLoading(true);
+    const payload = { name: deptForm.name.trim(), description: deptForm.description.trim() };
     try {
       if (editingDept) {
-        await departmentService.update(editingDept._id, deptForm);
-        showToast('success', 'Đã cập nhật phòng ban thành công');
+        await departmentService.update(editingDept._id, payload);
+        showToast('success', 'Đã cập nhật phòng ban');
       } else {
-        await departmentService.create(deptForm);
-        showToast('success', 'Đã tạo phòng ban mới thành công');
+        await departmentService.create(payload);
+        showToast('success', 'Đã tạo phòng ban');
       }
       setShowModal(false);
       loadDepartments();
@@ -82,7 +88,7 @@ export const DepartmentManagementPage: React.FC = () => {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!window.confirm(`Bạn có chắc chắn muốn xóa phòng ban "${name}"?`)) return;
+    if (!window.confirm(`Xóa phòng ban "${name}"?`)) return;
     try {
       await departmentService.delete(id);
       showToast('success', `Đã xóa phòng ban "${name}"`);
@@ -150,23 +156,25 @@ export const DepartmentManagementPage: React.FC = () => {
           </div>
           <div>
             <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', margin: 0 }}>
-              Quản Lý Phòng Ban Doanh Nghiệp
+              Quản Lý Phòng Ban
             </h1>
             <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', margin: '0.35rem 0 0 0' }}>
-              Danh mục phòng ban làm cơ sở tổ chức nhân sự và phân bổ ngân sách đề xuất
+              {departments.length} phòng ban
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleOpenCreate}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-        >
-          <Plus size={18} />
-          <span>Thêm Phòng Ban Mới</span>
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleOpenCreate}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+          >
+            <Plus size={18} />
+            <span>Thêm Phòng Ban</span>
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -185,7 +193,7 @@ export const DepartmentManagementPage: React.FC = () => {
                 Tên Phòng Ban
               </th>
               <th style={{ padding: '1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
-                Mô Tả Nhiệm Vụ
+                Mô Tả
               </th>
               <th style={{ padding: '1rem', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-muted)' }}>
                 Trạng Thái
@@ -225,22 +233,26 @@ export const DepartmentManagementPage: React.FC = () => {
                   </td>
                   <td style={{ padding: '1rem', textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-secondary"
-                        onClick={() => handleOpenEdit(dept)}
-                        title="Sửa phòng ban"
-                      >
-                        <Edit2 size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-danger"
-                        onClick={() => handleDelete(dept._id, dept.name)}
-                        title="Xóa phòng ban"
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-secondary"
+                          onClick={() => handleOpenEdit(dept)}
+                          title="Sửa"
+                        >
+                          <Edit2 size={14} />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleDelete(dept._id, dept.name)}
+                          title="Xóa"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -266,7 +278,7 @@ export const DepartmentManagementPage: React.FC = () => {
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
               <h3 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-                {editingDept ? 'Sửa Phòng Ban' : 'Thêm Phòng Ban Mới'}
+                {editingDept ? 'Sửa Phòng Ban' : 'Thêm Phòng Ban'}
               </h3>
               <button
                 type="button"
@@ -282,8 +294,8 @@ export const DepartmentManagementPage: React.FC = () => {
                 <label className="form-label" style={{ fontWeight: 600 }}>Tên Phòng Ban *</label>
                 <input
                   type="text"
-                  className="form-control"
-                  placeholder="Ví dụ: Phòng Kế Toán - Tài Chính"
+                  className="form-input"
+                  placeholder="VD: Phòng Kế Toán"
                   value={deptForm.name}
                   onChange={(e) => setDeptForm({ ...deptForm, name: e.target.value })}
                   required
@@ -291,11 +303,11 @@ export const DepartmentManagementPage: React.FC = () => {
               </div>
 
               <div>
-                <label className="form-label" style={{ fontWeight: 600 }}>Mô Tả / Chức Năng</label>
+                <label className="form-label" style={{ fontWeight: 600 }}>Mô Tả</label>
                 <textarea
-                  className="form-control"
+                  className="form-textarea"
                   rows={3}
-                  placeholder="Mô tả chức năng nhiệm vụ của phòng ban..."
+                  placeholder="Không bắt buộc"
                   value={deptForm.description}
                   onChange={(e) => setDeptForm({ ...deptForm, description: e.target.value })}
                 />
@@ -315,7 +327,7 @@ export const DepartmentManagementPage: React.FC = () => {
                   className="btn btn-primary"
                   disabled={actionLoading}
                 >
-                  {actionLoading ? 'Đang lưu...' : 'Lưu Phòng Ban'}
+                  {actionLoading ? 'Đang lưu...' : 'Lưu'}
                 </button>
               </div>
             </form>
